@@ -42,7 +42,7 @@ class Gen:
     """
         Synthetic dataset generator class.
     """
-    def __init__(self, semFilePath):
+    def __init__(self, semFilePath=None, sem=None, mod=None):
         """
         Constructor for Gen class.
 
@@ -50,38 +50,20 @@ class Gen:
             semFilePath (string): Path to the model file containing the SEM
                     from which to generate the data.
         """
+        assert (semFilePath is not None and sem is None and mod is None) or (semFilePath is None and sem is not None and mod is not None), \
+                'Gen: Must provide semFilePath or sem and mod, but not both.'
         self.semFileName = semFilePath
-
-    def generate(self, samples=1000, reset=False, quiet=False):
-        """
-        Function to generate the synthetic dataset.
-
-        Args:
-            samples (int, optional): The number of multivariate
-                    samples to generate. Defaults to 1000.
-            reset (bool, optional): If True, and the SEM uses noise() or
-                    coef() terms to generate arbitrary noise or coefficient
-                    parameters, will produce a new distribution. If noise() or 
-                    coef() are not used, or if set to false, will return new
-                    samples from the original distribution. Defaults to False.
-            quiet (bool, optional): Suppresses status messages if True.
-                    Defaults to False.
-
-        Returns:
-            string: The path to the generated .csv data file.
-        """
-        global VALIDATION, NOISES, NOISE_COUNT, COEFS, COEF_COUNT, CURR_EQUATION, RAW_EQUATIONS
-        global smallestStd, largestStd, smallestCoef, largestCoef, MAX_DIFFICULTY
-        if not RAW_EQUATIONS:
-            # First time.  Treat as if reset is True
-            reset = True
-        f = open(self.semFileName, 'r')
-        contents = f.read()
-        exec(contents, globals())
-        # For out file, use the input file name with the .csv extension
-        tokens = self.semFileName.split('.')
-        outFileRoot = str.join('.',tokens[:-1])
-        outFileName = outFileRoot + '.csv'
+        self.sem = sem
+        self.mod = mod
+        self.varNames = []
+        if self.semFileName:
+            f = open(self.semFileName, 'r')
+            contents = f.read()
+            exec(contents, globals())
+        else:
+            global varEquations, model
+            varEquations = self.sem
+            model = self.mod
         RAW_EQUATIONS = varEquations # From tag in the SEM file 'varEquations', a list of equations
         varNames = []
         for rv in model:
@@ -99,6 +81,69 @@ class Gen:
                 parents = []
             if observed:
                 varNames.append(name)
+        self.varNames = varNames
+
+    def generate(self, samples=1000, reset=False, quiet=False):
+        """
+        Function to generate the synthetic dataset and write to an output file
+        with the same path as the input file, but with a .csv extension.
+
+        Args:
+            samples (int, optional): The number of multivariate
+                    samples to generate. Defaults to 1000.
+            reset (bool, optional): If True, and the SEM uses noise() or
+                    coef() terms to generate arbitrary noise or coefficient
+                    parameters, will produce a new distribution. If noise() or 
+                    coef() are not used, or if set to false, will return new
+                    samples from the original distribution. Defaults to False.
+            quiet (bool, optional): Suppresses status messages if True.
+                    Defaults to False.
+
+        Returns:
+            string: The path to the generated .csv data file.
+        """
+        assert self.semFileName is not None, 'Generate requrires that Gen was constructed with a semFilePath.'
+        samples = self.samples(samples, reset, quiet)
+        # For out file, use the input file name with the .csv extension
+        tokens = self.semFileName.split('.')
+        outFileRoot = str.join('.',tokens[:-1])
+        outFileName = outFileRoot + '.csv'
+        outLines = []
+        outLine = str.join(',', self.varNames) + '\n'
+        outLines.append(outLine)
+        for sample in samples:
+            outLine = str.join(',', sample) + '\n'
+            outLines.append(outLine)
+        f = open(outFileName, 'w')
+        f.writelines(outLines)
+        f.close()
+        return outFileName
+
+    def samples(self, samples=1000, reset=False, quiet=False):
+        """
+        Generator function to produce the samples.
+
+        Args:
+            samples (int, optional): The number of multivariate
+                    samples to generate. Defaults to 1000.
+            reset (bool, optional): If True, and the SEM uses noise() or
+                    coef() terms to generate arbitrary noise or coefficient
+                    parameters, will produce a new distribution. If noise() or 
+                    coef() are not used, or if set to false, will return new
+                    samples from the original distribution. Defaults to False.
+            quiet (bool, optional): Suppresses status messages if True.
+                    Defaults to False.
+
+        Returns:
+            list: A list of samples, each containing a list of values,
+                    one for each variable.
+        """
+        global VALIDATION, NOISES, NOISE_COUNT, COEFS, COEF_COUNT, CURR_EQUATION, RAW_EQUATIONS
+        global smallestStd, largestStd, smallestCoef, largestCoef, MAX_DIFFICULTY
+        if not RAW_EQUATIONS:
+            # First time.  Treat as if reset is True
+            reset = True
+
         success = False
         while not success:
             outLines = []
@@ -114,12 +159,8 @@ class Gen:
                 largestCoef = 0
             for eq in varEquations:
                 cEquations.append(compile(eq,'err', 'single'))
-            for varName in varNames:
+            for varName in self.varNames:
                 cVarNames.append(compile(varName, 'err', 'eval'))
-
-            outLine = str.join(',', varNames) + '\n'
-            outLines.append(outLine)
-
 
             for sample in range(samples):
                 outTokens = []
@@ -135,26 +176,28 @@ class Gen:
                         print(self.getSEM())
                 for i in range(len(cVarNames)):
                     outTokens.append(str(eval(cVarNames[i])))
-                    #print (varNames[i], '=', eval(cVarNames[i]))
-                endline = '\n'	
-                if sample == samples-1:
-                    endline = ''
-                outLine = str.join(',', outTokens) + endline
-                outLines.append(outLine)
-            f = open(outFileName, 'w')
-            f.writelines(outLines)
-            f.close()
+                yield outTokens
             success = True
-        return outFileName
-        
+        return
+
+    def getVariables(self):
+        """
+        Return a list of variable names in the same order as the samples.
+
+        Returns:
+            list: List of variable names.
+        """
+        return self.varNames
+
     def getSEM(self):
         """
         Returns a string representing the SEM used to generate the data.
+        This will only return valid results after 'samples' has been called.
 
         Returns:
             string: Multiline string representing the SEM.
         """
-        global NOISE_COUNT, COEF_COUNT
+        global NOISE_COUNT, COEF_COUNT, RAW_EQUATIONS
         NOISE_COUNT = 0
         COEF_COUNT = 0
         outEquations = []
@@ -193,7 +236,7 @@ def noise():
         std = chooseStd()
         currNoise = distType + '(' + str(mean) + ',' + str(std) + ')'
         NOISES[NOISE_COUNT] = currNoise
-        print('noise[', NOISE_COUNT, '] = ', currNoise)
+        #print('noise[', NOISE_COUNT, '] = ', currNoise)
     NOISE_COUNT += 1
     return eval(currNoise)
 

@@ -57,6 +57,9 @@ class Reader():
             datastart = random.choice(range(dataslack))
             data = data[datastart:datastart + self.limit]
         for line in data:
+            if len(line) <= 1:
+                # Skip any empty lines.
+                continue
             if line[-1] == '\n':
                 line = line[:-1]
             tokens = line.split(',')

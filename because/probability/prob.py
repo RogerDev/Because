@@ -576,7 +576,6 @@ class ProbSpace:
                         # Zero probability -- don't bother accumulating
                         continue
                     probs = probYgZ.ToHistogram() * probZ # Creates an array of probabilities
-                    print('probs = ', probs.shape)
                     accum += probs
                     allProbs += probZ
                 accum = accum / allProbs

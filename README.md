@@ -147,6 +147,13 @@ Example:
     gen = synth.Gen('models/M3.py')
     gen.generate(1000) # generate 1,000 multivariate records
 
+Programs that want to produce data inline without intermediate files can use an alternate form
+of the constructor, and use the 'samples()' method.  See synth/test/genTest.py for an example of this.
+
+### Synth Model File Format
+
+See synth/models/example.py for an annotated example of a model file.
+
 ## References:
 
 [1] Mackenzie, D. and Pearl, J. (2018) _The Book of Why._ Basic Books.
