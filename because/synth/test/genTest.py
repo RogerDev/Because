@@ -35,3 +35,22 @@ for sample in samples:
 # with actual values.
 newSem = gen.getSEM()
 print('SEM = ', newSem)
+
+# Generate samples again with reset = False.  The resulting SEM should be the same
+# as the first.
+samples2 = gen.samples(10, reset=False)
+s = [x for x in samples2] # Note samples wont get executed unless we iterate through.
+newSem2 = gen.getSEM()
+#print('SEM2 = ', newSem2)
+if newSem != newSem2:
+    print('*** ERROR -- SEM and SEM2 should be identical')
+
+# Generate agiain with reset = True.  The resulting SEM should be different.
+samples3 = gen.samples(10, reset=True)
+s = [x for x in samples3]
+newSem3 = gen.getSEM()
+#print('SEM3 = ', newSem3)
+if newSem == newSem3:
+    print('*** ERROR -- SEM and SEM3 should not be identical')
+
+    

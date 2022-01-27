@@ -22,18 +22,15 @@ MEAN_SCALE = 5 # Gaussian Standard Deviation to be added to MEAN_MEAN to choose 
 MIN_STD = .1 # Minimum Scale parameter to be applied when generating noise
 STD_SCALE = 5 # Scale of exponential distribution to be added to MIN_STD when chosing the scale of the noise.
 
-#DISTRS = ['normal'] # Set of distributions to be chosen from for generating noise.  
-						# Note distributions must support location and scale parameters, and must allow negative locations
-
-						
-DISTRS = ['lognormal', 'laplace', 'logistic', 'gumbel']
+# DISTRS is a set of distributions to be chosen from for generating noise.  
+# # Note distributions must support location and scale parameters, and must allow negative locations			
+DISTRS = ['lognormal', 'laplace', 'logistic', 'gumbel', 'normal']
 VALIDATION = None
 CURR_EQUATION = 0
 NOISE_COUNT = 0
 NOISES = {}
 COEF_COUNT = 0
 COEFS = {}
-RAW_EQUATIONS = []
 MAX_DIFFICULTY = 0
 
 
@@ -42,13 +39,27 @@ class Gen:
     """
         Synthetic dataset generator class.
     """
-    def __init__(self, semFilePath=None, sem=None, mod=None):
+    def __init__(self, semFilePath=None, mod=None, sem=None, init=None):
         """
         Constructor for Gen class.
+
+        Construction can be from a file by supplying semFilePath, or
+        from a arguments by passing sem, modm and (optionally) init.
+
+        If from file, then only semFilePath should be provided and other
+        arguments should be default (or None).
+
+        For sem file format and format of mod, sem, and init see 
+        ./models/example.py.
 
         Args:
             semFilePath (string): Path to the model file containing the SEM
                     from which to generate the data.
+            mod (list): A list of model definitions of the same format as the lines
+                in the 'model' parameter of a model file.
+            sem (list): A list of equations of the same format as the 'varEquations'
+                parameter of a model file
+            init (list): A list of initialization lines that are only executed once.
         """
         assert (semFilePath is not None and sem is None and mod is None) or (semFilePath is None and sem is not None and mod is not None), \
                 'Gen: Must provide semFilePath or sem and mod, but not both.'
@@ -64,7 +75,7 @@ class Gen:
             global varEquations, model
             varEquations = self.sem
             model = self.mod
-        RAW_EQUATIONS = varEquations # From tag in the SEM file 'varEquations', a list of equations
+        self.varEquations = varEquations # From tag in the SEM file 'varEquations', a list of equations
         varNames = []
         for rv in model:
             observed = True
@@ -82,6 +93,12 @@ class Gen:
             if observed:
                 varNames.append(name)
         self.varNames = varNames
+        self.reset = None
+        if init:
+            # run any initialization statements
+            for initline in init:
+               exec(initline, globals())
+         
 
     def generate(self, samples=1000, reset=False, quiet=False):
         """
@@ -112,7 +129,8 @@ class Gen:
         outLine = str.join(',', self.varNames) + '\n'
         outLines.append(outLine)
         for sample in samples:
-            outLine = str.join(',', sample) + '\n'
+            sample2 = [str(s) for s in sample]
+            outLine = str.join(',', sample2) + '\n'
             outLines.append(outLine)
         f = open(outFileName, 'w')
         f.writelines(outLines)
@@ -138,27 +156,30 @@ class Gen:
             list: A list of samples, each containing a list of values,
                     one for each variable.
         """
-        global VALIDATION, NOISES, NOISE_COUNT, COEFS, COEF_COUNT, CURR_EQUATION, RAW_EQUATIONS
+        global VALIDATION, NOISES, NOISE_COUNT, COEFS, COEF_COUNT, CURR_EQUATION
         global smallestStd, largestStd, smallestCoef, largestCoef, MAX_DIFFICULTY
-        if not RAW_EQUATIONS:
+        if self.reset is None:
             # First time.  Treat as if reset is True
-            reset = True
-
+            self.reset = True
+        else:
+            self.reset = reset
         success = False
         while not success:
             outLines = []
             cEquations = []
             cVarNames = []
-            #print('reset = ', reset)
-            if reset:
+            if self.reset:
                 NOISES = {}
                 COEFS = {}
                 smallestStd = 10**100
                 largestStd = 0
                 smallestCoef = 10**100
                 largestCoef = 0
-            for eq in varEquations:
-                cEquations.append(compile(eq,'err', 'single'))
+            for eq in self.varEquations:
+                try:
+                    cEquations.append(compile(eq,'err', 'single'))
+                except:
+                    assert False, 'Bad Equation = ' + eq
             for varName in self.varNames:
                 cVarNames.append(compile(varName, 'err', 'eval'))
 
@@ -168,14 +189,16 @@ class Gen:
                 COEF_COUNT = 0
                 for i in range(len(cEquations)):
                     CURR_EQUATION = i
-                    varEquation = cEquations[i]
                     try:
-                        exec(varEquation)
+                        varEquation = cEquations[i]
                     except:
-                        print('*** Invalid Equation = ', RAW_EQUATIONS[i])
-                        print(self.getSEM())
+                        assert False, 'Bad cEquations'
+                    try:
+                        exec(varEquation, globals())
+                    except:
+                        assert False, '*** Invalid Equation = ' + self.varEquations[i]
                 for i in range(len(cVarNames)):
-                    outTokens.append(str(eval(cVarNames[i])))
+                    outTokens.append(eval(cVarNames[i], globals()))
                 yield outTokens
             success = True
         return
@@ -197,11 +220,11 @@ class Gen:
         Returns:
             string: Multiline string representing the SEM.
         """
-        global NOISE_COUNT, COEF_COUNT, RAW_EQUATIONS
+        global NOISE_COUNT, COEF_COUNT
         NOISE_COUNT = 0
         COEF_COUNT = 0
         outEquations = []
-        for equation in RAW_EQUATIONS:
+        for equation in self.varEquations:
             equation = "'" + equation + "',"
             while equation.find('data()') >= 0:
                 equation = equation.replace('data()', str(DATA_OFFSET) + ' + ' + NOISES[NOISE_COUNT],1)
@@ -267,7 +290,6 @@ def coef():
         coef *= sign
         coef = round(coef, 3)
         COEFS[COEF_COUNT] = coef
-        print('coef[', COEF_COUNT, '] = ', coef)
     COEF_COUNT += 1
     return coef
 

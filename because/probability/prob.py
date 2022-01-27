@@ -3,8 +3,10 @@
 import numpy as np
 import math
 from math import log, sqrt
-
-from because.probability import probCharts
+try:
+    from because.probability import probCharts
+except:
+    pass
 from because.probability.pdf import PDF
 from because.probability import uprob
 
