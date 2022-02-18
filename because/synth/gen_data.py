@@ -11,7 +11,7 @@ import numpy as np
 import math
 from math import *
 from numpy.random import *
-import sys
+from sys import argv
 import random
 
 # Tuning Parameters
@@ -94,11 +94,7 @@ class Gen:
                 varNames.append(name)
         self.varNames = varNames
         self.reset = None
-        if init:
-            # run any initialization statements
-            for initline in init:
-               exec(initline, globals())
-         
+        self.init = init         
 
     def generate(self, samples=1000, reset=False, quiet=False):
         """
@@ -158,11 +154,25 @@ class Gen:
         """
         global VALIDATION, NOISES, NOISE_COUNT, COEFS, COEF_COUNT, CURR_EQUATION
         global smallestStd, largestStd, smallestCoef, largestCoef, MAX_DIFFICULTY
+        locs = locals()
         if self.reset is None:
             # First time.  Treat as if reset is True
             self.reset = True
         else:
             self.reset = reset
+
+        if self.init:
+            # run any initialization statements
+            for initline in self.init:
+                # Don't allow imports
+                if 'import' not in initline:
+                    try:
+                        exec(initline, globals(), locs)
+                    except:
+                        assert False, 'synth.gen_data:  Bad import line = ' + initline
+                else:
+                    assert False, 'synth.gen_data: Imports are not allowed in initialization statements. Got = ' + initline
+
         success = False
         while not success:
             outLines = []
@@ -176,10 +186,13 @@ class Gen:
                 smallestCoef = 10**100
                 largestCoef = 0
             for eq in self.varEquations:
-                try:
-                    cEquations.append(compile(eq,'err', 'single'))
-                except:
-                    assert False, 'Bad Equation = ' + eq
+                if 'import' in eq:
+                    assert False, 'synth.gen_data: Imports are not allowed in SEM equations. Got = ' + eq
+                else:
+                    try:
+                        cEquations.append(compile(eq,'err', 'single'))
+                    except:
+                        assert False, 'synth.gen_data: Bad Equation = ' + eq
             for varName in self.varNames:
                 cVarNames.append(compile(varName, 'err', 'eval'))
 
@@ -194,11 +207,11 @@ class Gen:
                     except:
                         assert False, 'Bad cEquations'
                     try:
-                        exec(varEquation, globals())
+                        exec(varEquation, globals(), locs)
                     except:
                         assert False, '*** Invalid Equation = ' + self.varEquations[i]
                 for i in range(len(cVarNames)):
-                    outTokens.append(eval(cVarNames[i], globals()))
+                    outTokens.append(eval(cVarNames[i], globals(), locs))
                 yield outTokens
             success = True
         return
@@ -311,13 +324,13 @@ def chooseStd():
 # If run from command line, parameters are filepath and datacount
 if __name__ == '__main__':
     filename = None
-    if len(sys.argv) <= 1 or '-h' in sys.argv:
+    if len(argv) <= 1 or '-h' in argv:
         print('Usage: python gen_data.py filepath [datasize].')
         print('     If datasize is not specified, defaults to 1000.')
     else:
-        filename = sys.argv[1]
-        if len(sys.argv) > 2:
-            datacount = eval(sys.argv[2])
+        filename = argv[1]
+        if len(argv) > 2:
+            datacount = eval(argv[2])
         else:
             datacount = 1000
         print('Generating data for model = ', filename)

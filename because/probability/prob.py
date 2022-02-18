@@ -13,7 +13,7 @@ from because.probability import uprob
 DEBUG = False
 
 class ProbSpace:
-    def __init__(self, ds, density = 1.0, power=1, discSpecs = None, cMethod = 'd'):
+    def __init__(self, ds, density = 1.0, power=1, discSpecs = None, cMethod = 'd!'):
         """ Probability Space (i.e. Joint Probability Distribution) based on a a multivariate dataset
             of random variables provided.  'JPS' (Joint Probability Space) is an alias for ProbSpace.
             The Joint Probability Space is a multi-dimensional probability distribution that embeds all
@@ -225,8 +225,8 @@ class ProbSpace:
         if density is None:
             density = self.density
         filtDat, parentProb, finalQuery = self.filter(givensSpec, minPoints=minPoints, maxPoints=maxPoints)
-        newPS = ProbSpace(filtDat, power = power, density = density, discSpecs = discSpecs, cMethod = self.cMethod)
-        #newPS = ProbSpace(filtDat, power = power, density = density)
+        #newPS = ProbSpace(filtDat, power = power, density = density, discSpecs = discSpecs, cMethod = self.cMethod)
+        newPS = ProbSpace(filtDat, power = power, density = density, cMethod = self.cMethod)
         newPS.parentProb = parentProb
         newPS.parentQuery = finalQuery
         return newPS
@@ -248,7 +248,7 @@ class ProbSpace:
             See FilteredSpace documentation (above) for details.
         """
         maxAttempts = 8
-        delta = .05
+        delta = .01
         minPoints_default = max([min([100, sqrt(self.N)]), 20])
         maxPoints_default = max([min([1000, int(self.N / 2)]), minPoints_default * 5])
         if minPoints is None:
@@ -1066,61 +1066,80 @@ class ProbSpace:
         rho = num1 / (denom1**.5 * denom2**.5)
         return rho
 
-    def Predict(self, Y, X):
+    def Predict(self, Y, X, useVars=None):
         """
             Y is a single variable name.  X is a dataset.
         """
-        dists = self.PredictDist(Y, X)
+        dists = self.PredictDist(Y, X, useVars)
         preds = [dist.E() for dist in dists]
         return preds
 
-    def Classify(self, Y, X):
+    def Classify(self, Y, X, useVars=None):
         """
             Y is a single variable name.  X is a dataset.
         """
         assert self.isDiscrete(Y), 'Prob.Classify: Target variable must be discrete.'
-        dists = self.PredictDist(Y, X)
+        dists = self.PredictDist(Y, X, useVars)
         preds = [dist.mode() for dist in dists]
         return preds
 
-    def PredictDist(self, Y, X):
+    def PredictDist(self, Y, X, useVars=None):
         """
             Y is a single variable name.  X is a dataset.
         """
         outPreds = []
         # Make sure Y is not in X
-        vars = list(X.keys())
-        try:
-            vars.remove(Y)
-        except:
-            pass
-        # Sort the independent variables by dependence with Y
-        deps = [(self.dependence(var, Y, power=3), var) for var in vars]
-        deps.sort()
-        deps.reverse()
-        vars = []
-        # Remove any independent independents
-        for i in range(len(deps)):
-            dep = deps[i]
-            if dep[0] < .5:
-                print('Prob.PredictDist: rejecting variables due to independence from target(p-value, var): ', deps[i:])
-                break
-            else:
-                vars.append(dep[1])
-        #print('vars = ', vars)
-        # Vars now contains all the variables that are not indpendent from Y, sorted in
-        # order of highest dependence.
+        if useVars is not None:
+            # Use the independent variables as specified
+            vars = useVars
+        else:
+            # Calculate the variables to use.  No point
+            # in using variables that are independent of the target,
+            # so we filter those out.  We also make sure the target is
+            # not in the variable list.
+            vars = list(X.keys())
+            # Make sure the target is not in the variable list.
+            try:
+                vars.remove(Y)
+            except:
+                pass
+            # Sort the independent variables by dependence with Y
+            deps = [(self.dependence(var, Y, power=3), var) for var in vars]
+            deps.sort()
+            deps.reverse()
+            vars = []
+            # Remove any independent independents
+            for i in range(len(deps)):
+                dep = deps[i]
+                if dep[0] < .5:
+                #if dep[0] < 0: # Temp disable
+                    print('Prob.PredictDist: rejecting variables due to independence from target(p-value, var): ', deps[i:])
+                    break
+                else:
+                    vars.append(dep[1])
+            #print('vars = ', vars)
+            # Vars now contains all the variables that are not indpendent from Y, sorted in
+            # order of highest dependence.            
 
         # Get the number of items to predict:
         numTests = len(X[vars[0]])
-
+        targetIsDiscrete = self.isDiscrete(Y)
         for i in range(numTests):
             filts = []
             for var in vars:
                 val = X[var][i]
                 filts.append((var, val))
-            fs = self.SubSpace(filts)
-            pred = fs.distr(Y)
+            maxPoints = min([sqrt(self.N), 20])
+            fs = self.SubSpace(filts, minPoints=1, maxPoints=maxPoints)
+            #fs = self.SubSpace(filts)
+            if DEBUG and fs.N > maxPoints and not targetIsDiscrete:
+                print('subspace.N = ', fs.N)
+            if fs.N == 0:
+                if DEBUG:
+                    print('no examples found.')
+                pred = self.distr(Y) # Use the natural target distribution
+            else:
+                pred = fs.distr(Y)
             outPreds.append(pred)
         return outPreds
 

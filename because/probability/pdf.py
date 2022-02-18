@@ -50,7 +50,7 @@ class PDF:
             self.data = data
             self.R = RKHS(self.data)
             self.style = 'r'
-        elif mvData is not None:
+        elif mvData is not None and not isDiscrete:
             self.style = 'mv'
             self.mvData = mvData
             self.filters = filters
@@ -277,7 +277,7 @@ class PDF:
     mean = E
     
     def mode(self):
-        assert self.isDiscrete, 'Mode is only available for discrete variables'
+        #assert self.isDiscrete, 'Mode is only available for discrete variables'
         maxProb = 0.0
         maxVal = None
         for i in range(self.binCount):
@@ -289,6 +289,7 @@ class PDF:
         return maxVal
 
     def percentile(self, ptile):
+        #assert False, 'BinList = ' + str(self.bins)
         ptile2 = ptile / 100.0
         cum = 0.0
         val = None
@@ -296,26 +297,21 @@ class PDF:
             bin = self.bins[i]
             prob = bin[3]
             if cum + prob >= ptile2:
-                prevBin = self.bins[i-1]
-                if self.isDiscrete:
-                    if self.binCount / 2.0 == int(self.binCount / 2.0):
-                        # Even number
-                        val = (self.binValue(i-1) + self.binValue(i)) / 2
-                    else:
-                        # Odd number
-                        val = self.binValue(i)
+
+                if self.isDiscrete:                    
+                    # Use Nearest Rank method
+                    # Return the value of the first bin cumulating at least that percentage of points.
+                    val = bin[1]
                 else:
-                    prevMin = prevBin[0]
-                    prevMax = prevBin[1]
-                    prevRange = prevMax - prevMin
-                    prevMean = self.binValue(i-1)
-                    thisMin = bin[0]
-                    thisMax = bin[1]
-                    thisRange = thisMax - thisMin
-                    thisMean = self.binValue(i)
-                    prevPct = (ptile2 - cum) / prevRange
-                    thisPct = ((cum + prob) - thisMin) / thisRange
-                    val = prevMean * prevPct + thisMean * thisPct
+                    # Linearly interpolate 
+                    binMin = bin[1]
+                    binMax = bin[2]
+                    binRange = binMax - binMin
+                    pctMin = cum
+                    pctMax = cum + prob
+                    pctRange = pctMax - pctMin
+                    pctPos = (ptile2 - pctMin) / pctRange
+                    val = binMin + pctPos * binRange
                 break
             else:
                 cum += prob
@@ -409,12 +405,11 @@ class PDF:
         for i in range(len(self.bins)):
             bin = self.bins[i]
             binProb = bin[3]
-            if binProb == 0:
-                continue
-            outTups.append((self.binValue(i), binProb))
+            if self.isDiscrete:
+                outTups.append((bin[1], bin[1], binProb))
+            else:    
+                outTups.append((bin[1], bin[2], binProb))
         return outTups
-
-    
 
     def SetHistogram(self, newHist):
         assert len(newHist) == len(self.bins), "PDF.SetHistogram: Cannot set histogram with different lenght than current distribution.  (new, original) = " + str((len(newHist), len(self.bins)))

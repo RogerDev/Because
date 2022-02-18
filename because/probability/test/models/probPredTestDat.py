@@ -33,11 +33,11 @@ model =    [
 
 # Structural Equation Model for data generation
 varEquations = [
-                # Continuous variables (X's and Y are for 'training', XTs and YT are for testing)
+                # Continuous variables
                 'X1 = normal(0,1)',
                 'X2 = logistic(2,1)',
                 'X3 = exponential()',
-                'Y = X1 + abs(X2)**.7 + math.log(X3)',
+                'Y = X1 + abs(X2)**.7 + math.log(X3) + normal(0,.1)',
                 # Discrete varibles
                 'DX1 = choice(range(1, 7))',
                 'DX2 = choice(range(-1, 2))',

@@ -22,7 +22,7 @@ def run(filename):
     # split data between 'training' and test
     vars = list(dat.keys())
     datLen = len(dat[vars[0]])
-    trainLen = datLen - 100
+    trainLen = max([int(datLen * .9), datLen-1000])
     tr = {}
     te = {}
     for var in dat.keys():
@@ -60,18 +60,19 @@ def run(filename):
     d = ps.distr('DY')
     print('stats(DY) = ', d.minVal(), d.maxVal(), d.mean(), d.stDev(), d.skew(), d.kurtosis())
     expected = te['DY']
-    results = ps.Classify('DY', te)
+    useVars = ['DX1', 'DX2', 'DX3', 'DX4']
+    results = ps.Classify('DY', te, useVars)
     #print('results = ', results)
     cumErr = 0
     for i in range(len(results)):
         val = results[i]
         exp = expected[i]
         X = []
-        for x in ['DX1', 'DX2', 'DX3', 'DX4']:
+        for x in useVars:
             X.append(te[x][i])
     
-        #print('X = ', X, ', pred = ', val, ', expected = ', exp, ', err = ', val != exp)
         if val != exp:
+            print('X = ', X, ', pred = ', val, ', expected = ', exp, ', err = ', val != exp)
             cumErr += 1
     print('Accuracy = ', 1 - (cumErr / len(results)))
 
