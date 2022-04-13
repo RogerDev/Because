@@ -3,7 +3,7 @@ if '.' not in sys.path:
     sys.path.append('.')
 import time
 
-import because
+
 from because.causality import rv
 from because.causality.cgraph import cGraph
 from because.synth import read_data
@@ -55,13 +55,14 @@ print()
 
 results = g.TestModel(order = 2)
 
-conf, numTests, numTestsByType, numErrsByType, errors, warnings = results
+conf, numTests, numTestsByType, numErrsByType, numWarnsByType, errors, warnings = results
 
 print()
 print('Confidence = ', conf)
 print('Number of Tests = ', numTests)
 print('Number of Tests by Type = ', numTestsByType)
 print('Number of Errs by Type = ', numErrsByType)
+print('Number of Warnings by Type = ', numWarnsByType)
 print('Total Errors = ', len(errors))
 print('Total Warnings = ', len(warnings))
 print()

@@ -196,7 +196,7 @@ class ProbSpace:
         return range(bucketCount)
 
     def SubSpace(self, givensSpec, minPoints=None, maxPoints=None, power=None,
-                        density=None, discSpecs=None):
+                        density=None, discSpecs=None, fixDistr=False):
         """ Return a new ProbSpace object representing a sub-space of the current
             probability space.
             The returned object represents the multivariate joint probability space
@@ -224,11 +224,16 @@ class ProbSpace:
             power = self.power
         if density is None:
             density = self.density
+        #print('givens = ', givensSpec)
+        #print('minPoints, maxPoints, self.N = ', minPoints, maxPoints, self.N)
         filtDat, parentProb, finalQuery = self.filter(givensSpec, minPoints=minPoints, maxPoints=maxPoints)
-        #newPS = ProbSpace(filtDat, power = power, density = density, discSpecs = discSpecs, cMethod = self.cMethod)
-        newPS = ProbSpace(filtDat, power = power, density = density, cMethod = self.cMethod)
+        if fixDistr:
+            newPS = ProbSpace(filtDat, power = power, density = density, discSpecs = discSpecs, cMethod = self.cMethod)
+        else:
+            newPS = ProbSpace(filtDat, power = power, density = density, cMethod = self.cMethod)
         newPS.parentProb = parentProb
         newPS.parentQuery = finalQuery
+        #print('new N = ', newPS.N)
         return newPS
 
     def filter(self, filtSpec, minPoints=None, maxPoints=None):
@@ -248,7 +253,7 @@ class ProbSpace:
             See FilteredSpace documentation (above) for details.
         """
         maxAttempts = 8
-        delta = .01
+        delta = .1
         minPoints_default = max([min([100, sqrt(self.N)]), 20])
         maxPoints_default = max([min([1000, int(self.N / 2)]), minPoints_default * 5])
         if minPoints is None:
@@ -315,17 +320,35 @@ class ProbSpace:
                 if not include:
                     remRecs.append(i)
             remaining = self.N - len(remRecs)
+            #print('attempt = ', attempt, ', remaining = ', remaining, ', delta = ', delta)
             targetVal = maxPoints * .5
-            if remaining == 0:
-                delta *= 5
-            elif remaining < minPoints:
-                delta *= min([targetVal / float(remaining), 1 + 1.2 / ((attempt+1)**.5)])
+            midpoint = (minPoints + maxPoints) / 2.0
+            damping = (1/(attempt+1))
+            minFactor = 1.1**damping
+            maxFactor = 5**damping
+            if remaining > 0:
+                ratio = (midpoint / remaining)**damping
+            else:
+                ratio = maxFactor
+            #print('ratio1 = ', ratio)
+            #print('minFactor, maxFactor = ', minFactor, maxFactor)
+            if ratio >= 1 and ratio < minFactor:
+                ratio = minFactor
+            elif ratio < 1 and ratio > (1/minFactor):
+                ratio = 1/minFactor
+            if ratio >= maxFactor:
+                ratio = maxFactor
+            elif ratio < (1/maxFactor):
+                ratio = 1/maxFactor
+            #print('ratio2 = ', ratio)
+            if remaining < minPoints:
+                delta *= ratio
             elif remaining > maxPoints:
-                delta *= max([targetVal / float(remaining), 1 - .5 / ((attempt+1)**.5)])
+                delta *= ratio
             else:
                 break
         if DEBUG and progressive:
-            print('attempt = ', attempt, ', delta = ', delta, ', remaining = ', remaining, ', minVal, maxVal = ', minPoints, maxPoints)
+            print('attempt = ', attempt, ', delta = ', delta, ', remaining = ', remaining, ', minPoints, maxPoints = ', minPoints, maxPoints)
             #print('finalQuery = ', filtSpec2, ', parentProb = ', remaining/self.N, ', parentN = ', self.N)
             pass
         # Remove all the non included rows
@@ -544,35 +567,37 @@ class ProbSpace:
                 #print('totalDepth = ', totalDepth)
                 p = self.reductionExponent(totalDepth)
                 #print('p = ', p)
-                condFiltSpecs = self.getCondSpecs(conditionalizeOn, power=power, hierarchical=True, reductionExp=p)
+                #condFiltSpecs = self.getCondSpecs(conditionalizeOn, power=power, hierarchical=True, reductionExp=p)
                 #countRatio = float(self.N) / filtSample.N
                 allProbs = 0.0 # The fraction of the probability space that has been tested.
+
+                Dtarg = 1 # The target dim.
+                Dfilt = len(filtSpecs)  # Filterning Dom
+                Dcond = len(condSpecs)  # Conditionalize Dim
+                Dquery = Dtarg + Dfilt + Dcond # Query Dim
+                Nfilt = self.N**((Dtarg + Dcond)/Dquery) # Number of points to return from filter
+                # First, we filter on the bound conditions (if any), then conditionalize on the reduced set
+                if filtSpecs:
+                    minP_Filt = .8 * Nfilt
+                    maxP_Filt = 1.2 * Nfilt
+                    ss = self.SubSpace(filtSpecs, minPoints=minP_Filt, maxPoints=maxP_Filt, discSpecs=self.discSpecs, fixDistr=True)
+                else:
+                    ss = self
+                Ntarg = self.N**(Dtarg/(Dcond + Dtarg)) # Number of points to return from final
+                minP = .8 * Ntarg
+                maxP = 1.2 * Ntarg
+                condFiltSpecs = self.getCondSpecs(conditionalizeOn, power=power, hierarchical=False, reductionExp=p)
                 for cf in condFiltSpecs:
                     # Create a new subspace filtered by both the bound and unbound conditions
                     # Note that progressive filtering will be used for the unbound conditions.
                     # probYgZ is P(Y | Z=z) e.g., P(Y | X=1, Z=z)
-                    minPoints = self.N**(p**len(conditionalizeOn))
-                    maxPoints = minPoints * 5
                     #print('N, min, max = ', self.N, minPoints, maxPoints)
-                    ss = self.SubSpace(cf, minPoints=minPoints, maxPoints=maxPoints, discSpecs=self.discSpecs)
-                    #print('ss.parentQuery = ', ss.parentQuery, ss.N)
-                    if filtSpecs:
-                        # If we have other (bound) filtering to do, we do it here.
-                        minPoints = ss.N**(p**len(filtSpecs))
-                        maxPoints = minPoints * 5
-                        #print('N, min, max (2) = ', ss.N, minPoints, maxPoints)
-                        # Allow 0 points to be found if we are outside the current space.
-                        ss2 = ss.SubSpace(filtSpecs, discSpecs=self.discSpecs, minPoints = 0, maxPoints = maxPoints)
-                        #print('ss2.parentQuery = ', ss2.parentQuery, ss2.N)
-                    else:
-                        # No further filtering.  Use this distribution.
-                        ss2 = ss
+                    ss2 = ss.SubSpace(cf, minPoints=minP, maxPoints=maxP, discSpecs=self.discSpecs, fixDistr=True)
                     #print('ss2.N = ', ss2.N)
                     probYgZ = ss2.distr(rvName)
                     #probYgZ = filtSpace.distr(rvName, cf)
                     # Now we can compute probZ as ratio of the number of data points in the filtered distribution and the original
-                    
-                    probZ = ss.N / self.N
+                    probZ = ss2.N / ss.N
                     #print('probZ = ', probZ, ', probYgZ/E() = ', probYgZ.E(), ', probYgZ.N = ', probYgZ.N, ', ss.N = ', ss.N, ', ss.query = ', ss.parentQuery, ', ss2.query = ', ss2.parentQuery)
                     if probZ == 0:
                         # Zero probability -- don't bother accumulating
@@ -737,8 +762,10 @@ class ProbSpace:
                 # of the next one.  That way, we sample using the mean and std
                 # of the variable in the conditioned space of the previous vars.
                 if s != len(spec) - 1 and hierarchical:
-                    minPoints = currPS.N**p
-                    maxPoints = minPoints * 5
+                    dQuery = len(spec)
+                    nTarg = self.N**((s+1)/dQuery)
+                    minPoints = .8 * nTarg
+                    maxPoints = 1.2 * nTarg
                     #print('N, minPoints, maxPoints = ', currPS.N, minPoints, maxPoints)
                     currPS = currPS.SubSpace([varSpec], minPoints=minPoints, maxPoints=maxPoints)
             # Only need to rotate if doing hierarchical

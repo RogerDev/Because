@@ -1,3 +1,8 @@
+"""
+Causal Graph Module.
+
+Implements class cGraph for defining and analyzing causal models.
+"""
 import math
 
 import networkx
@@ -10,6 +15,7 @@ from because.probability import direction
 from because.probability.standardiz import standardize
 
 VERBOSE = 1
+DEBUG = False
 # rvList is a list of random variable (rv) objects
 # data is a dictionary keyed by random variable name, containing a list of observed values.
 #   Each variable's list should be the same length
@@ -18,16 +24,19 @@ class cGraph:
     Class for storing and operating on causal graphs.
 
     Causal graphs are stored as a directed acyclic graph (DAG).
+    Uses networkx for graph analysis.
+
+    The graph can be constructed with or without data, but many functions will not be useful
+    without data.
+    
+    Args:
+        rvList(list) List of Random Variable objects (see rv.py).
+        data(dictionary) Dictionary mapping each observed variable name to a list of observed values.
+                    The value lists for all variables should be the same length (i.e. nObservations).
+                    Defaults to {}.
     """
     def __init__(self, rvList, data={}):
-        """
-        cGraph Constructor
 
-        Args:
-            rvList (list): rvList is a list of Random Variable (RV) objects (see because.causality.rv)
-            data (dict, optional): data is a dictionary keyed by Random Variable (RV)name, containing a list of observed values.
-                        Each variable's list should be the same length. Defaults to {}.
-        """
         self.g = networkx.DiGraph()
         self.rvDict = {}
         for rv in rvList:
@@ -97,6 +106,15 @@ class cGraph:
         print('Edges:', self.g.edges())
 
 
+    def getEdges(self):
+        """
+        Return a list of all edges in the graph
+
+        Returns:
+            list: list of tuples (fromNode, toNode)
+        """
+        return list(self.g.edges)
+
     def getAdjacencies(self, varName):
         """
         Returns parents and children of a given variable
@@ -142,6 +160,16 @@ class cGraph:
         if parentVar in self.getParents(childVar):
             return True
         return False
+
+    def getAncestors(self, node):
+        ancestors = set()
+        parents = self.getParents(node)
+        for parent in parents:
+            ancestors.add(parent)
+            ancs = self.getAncestors(parent)
+            for anc in ancs:
+                ancestors.add(anc)
+        return list(ancestors)
 
     def isDescendant(self, ancestor, descendant):
         parents = self.getParents(descendant)
@@ -274,7 +302,7 @@ class cGraph:
     #       test for the given error type.
     #   - numErrsPerType is a list, for each error type, of the number of failed tests.
     #   - errorDetails is a list of failed tests, each with the following format:
-    #       [(errType, x, y, z, isDep, errStr)]
+    #       [(errType, x, y, z, isDep, pval, errStr)]
     #       Where:
     #           errType = 0 (Exogenous variables not independent) or;
     #                    1 (Expected independence not observed) or; 
@@ -286,8 +314,10 @@ class cGraph:
     #               independence
     #           pval -- The p-val returned from the independence test
     #           errStr A human readable error string describing the error
+    #   - warningDetails is a list of tests with warnings.  Format is the same as
+    #       for errorDetails above.
     #
-    def TestModel(self, data=None, order=3):
+    def TestModel(self, data=None, order=3, power=1, deps=None, edges=None):
         # Standardize the data before doing independence testing
         warningPenalty = .0025
         iData = {}
@@ -301,14 +331,17 @@ class cGraph:
             data = self.data
         numTestsPerType = [0] * numTestTypes
         numErrsPerType = [0] * numTestTypes
-        deps = self.computeDependencies(order)
+        numWarnsPerType = [0] * numTestTypes
+        if deps is None:
+            # No dependencies passed in.  Compute them here.
+            deps = self.computeDependencies(order)
         if VERBOSE:
             print('Testing Model for', len(deps), 'Independencies')
         for dep in deps:
             x, y, z, isDep = dep
             if z is None:
                 z = []
-            pval = independence.test(ps, [x], [y], z, power=1)
+            pval = independence.test(ps, [x], [y], z, power=power)
             print(x, y, z)
             errStr = None
             warnStr = None
@@ -335,19 +368,18 @@ class cGraph:
             if errStr:
                 if VERBOSE:
                     print('***', errStr)
-                    #5/0
                 errors.append((testType, [x], [y], list(z), isDep, pval, errStr))
                 numErrsPerType[testType] += 1
             if warnStr:
                 if VERBOSE:
                     print('*', warnStr)
-                    #5/0
                 warnings.append((testType, [x], [y], list(z), isDep, pval, warnStr))
+                numWarnsPerType[testType] += 1
             elif VERBOSE:
                 print('.',)
         # Now test directionalities
         testType = 3
-        dresults = self.testAllDirections()
+        dresults = self.testAllDirections(edges = edges)
         derrs = 0
         for dresult in dresults:
             isError, cause, effect, rho = dresult
@@ -367,33 +399,56 @@ class cGraph:
                         print('***', errStr)
                     numErrsPerType[testType] += 1
             numTestsPerType[testType] += 1
+        confidence = self.scoreModel(numTestsPerType, numErrsPerType, numWarnsPerType)
+        numTotalTests = len(deps) + len(dresults)
+        if VERBOSE:
+            print('Model Testing Completed with', len(errors), 'error(s) and', len(warnings), ' warning(s).  Confidence = ', round(confidence * 100, 1), '%')
+        return (confidence, numTotalTests, numTestsPerType, numErrsPerType, numWarnsPerType, errors, warnings)
+
+    def scoreModel(self, numTestsPerType, numErrsPerType, numWarnsPerType=[]):
+        """
+        Score the confidence in the model base on results of the 4 test types:
+        - 0 -> Exogenous Variable not Independent
+        - 1 -> Unexpected Dependence
+        - 2 -> Unexpected Independence
+        - 3 -> Incorrect Causal Direction
+
+        Args:
+            numTestsPerType (sequence): Sequence of 4 integers representing the count of tests of each of
+                the four types (0-3).
+            numErrsPerType (sequence): Sequence of 4 integers representing the count of failed test for
+                each of the four types
+            numWarnsPerType (sequence): Sequence of 4 integers representing the number of tests with
+                warnings for each of the four types.
+
+        Returns:
+            Integer: A confidence score from 0 (no correspondance) to 1.0 (perfect correspondence).
+        """
+        numTestTypes = 4
+        failurePenaltyPerType = [1, 1, 1, 1] # Adjust to weight error types differently
+        warningPenaltyPerType = [.25, .25, .25, .25] # Adjust to weight warning types differently
+
         confidence = 1.0
-        failurePenaltyPerType = [1, 1, 1, 1]
-        errorRatios = [0.0] * numTestTypes
         for i in range(numTestTypes):
             nTests = numTestsPerType[i]
             nErrs = numErrsPerType[i]
+            nWarns = numWarnsPerType[i]
             if nTests > 0:
-                ratio = nErrs / nTests
-                errorRatios[i] = ratio
-                confidence -= ratio * failurePenaltyPerType[i] / numTestTypes
-        warnPenalty = len(warnings) * warningPenalty
-        confidence -= warnPenalty
+                eratio = nErrs / nTests
+                confidence -= eratio * failurePenaltyPerType[i] / numTestTypes
+                wratio = nWarns / nTests
+                confidence -= wratio * warningPenaltyPerType[i] / numTestTypes
         confidence = max([confidence, 0.0])
-        numTotalTests = len(deps)
-        if VERBOSE:
-            print('Model Testing Completed with', len(errors), 'error(s) and', len(warnings), ' warning(s).  Confidence = ', round(confidence * 100, 1), '%')
-        return (confidence, numTotalTests, numTestsPerType, numErrsPerType, errors, warnings)
+        return confidence
 
     def testDirection(self, x, y):
         rho = direction.test_direction(self.data[x], self.data[y])
         return rho
 
-    def testAllDirections(self):
+    def testAllDirections(self, edges=None):
         epsilon = .0001
-        rvList = list(self.rvList)
-        rvList.sort()
-        edges = self.g.edges
+        if edges is None:
+            edges = self.getEdges()
         results = []
         errors = 0
         for edge in edges:
@@ -503,14 +558,15 @@ class cGraph:
         return outMap
 
     def intervene(self, targetRV, doList, controlFor = [], power=1):
-        """ Implements Intverventions (Level2 of Ladder of Causality)
-            of the form P(Y | do(X1=x1),Z).  That is, the Probability
-            of Y given that we set X1 to x1 and control for Z.  This is generalized
-            to allow multiple interventions on different variables.
-            doList is the set of interventions: [(varName1, val1), ..., (varNamek, valk)].
-            We return a probability distribution that can be further queried,
-            e.g., as to the probability of a value, or the expected value
-            (see Probability/Prob.py and pdf.py)
+        """ 
+        Implements Intverventions (Level2 of Ladder of Causality)
+        of the form P(Y | do(X1=x1),Z).  That is, the Probability
+        of Y given that we set X1 to x1 and control for Z.  This is generalized
+        to allow multiple interventions on different variables.
+        doList is the set of interventions: [(varName1, val1), ..., (varNamek, valk)].
+        We return a probability distribution that can be further queried,
+        e.g., as to the probability of a value, or the expected value
+        (see Probability/Prob.py and pdf.py)
         """
         # Filter out any interventions for which the target is not a descendant of the
         # intevening variable.  The effect of those interventions will alsways be zero.
@@ -527,6 +583,10 @@ class cGraph:
         # Find all the backdoor paths and identify the minimum set of variables (Z) that
         # block all such paths without opening any new paths.
         blockingSet = self.findBackdoorBlockingSet(doListF[0][0], targetRV)
+        # Make sure that none of our intervention variables is in the blocking set.
+        for item in doList:
+            if item[0] in blockingSet:
+                blockingSet.remove(item[0])
         # Now we compute the probability distribution of Y conditionalized on all of the blocking
         # variables.
         given = doList + blockingSet + controlFor
@@ -535,7 +595,8 @@ class cGraph:
         return distr
 
     def ACE(self, cause, effect, power=1):
-        """ Average Causal Effect of cause on effect.
+        """
+        Average Causal Effect of cause on effect.
         """
         causeDistr = self.prob.distr(cause)
         causeMean = causeDistr.E()
@@ -558,7 +619,8 @@ class cGraph:
 
 
     def CDE(self, cause, effect, power=1):
-        """ Controlled Direct Effect of cause on effect
+        """
+        Controlled Direct Effect of cause on effect
         """
         causeDistr = self.prob.distr(cause)
         causeMean = causeDistr.E()
@@ -585,17 +647,19 @@ class cGraph:
         return final
 
     def findBackdoorBlockingSet(self, source, target):
-        """ Find the minimal set of nodes that block all backdoor paths from source
-            to target.
+        """ 
+        Find the minimal set of nodes that block all backdoor paths from source
+        to target.
         """
         cacheKey = (source, target)
         if cacheKey in self.bdCache.keys():
             return self.bdCache[cacheKey]
         maxBlocking = 3
         bSet = []
-        # find all paths from parents of source to target.
-        parents = self.getParents(source)            
-        #print('parents = ', parents)
+        # find all paths from parents (including ancestors) of source to target.
+        parents = self.getParents(source)
+        if DEBUG:          
+            print('findBackdoorBloockingSet: parents = ', parents)
         # Create a graph view that removes the links from the source to its parents
         def includeEdge(s, d):
             #print('source, dest = ', s, d)
@@ -606,17 +670,26 @@ class cGraph:
         vg = networkx.subgraph_view(self.g, filter_edge=includeEdge)
         for parent in parents:
             paths = networkx.all_simple_paths(vg, parent, target)
-            #print('paths = ', [path for path in paths])
+            if DEBUG:
+                pass
+                #print('findBackdoorBloockingSet: paths = ', [path for path in paths])
             for path in paths:
-                #print('path = ', path)
+                if DEBUG:
+                    print('findBackdoorBloockingSet: path = ', path)
                 # Remove the last node of the path -- always the target
                 intermediates = path[:-1]
-                #print('int = ', intermediates)
+                if DEBUG:
+                    print('findBackdoorBloockingSet: int = ', intermediates)
                 for i in intermediates:
                     if i not in pathNodes:
                         pathNodes[i] = 1
                     else:
                         pathNodes[i] += 1
+        # Remove any descendants of source from pathNodes
+        allNodes = list(pathNodes.keys())
+        for node in allNodes:
+            if self.isDescendant(source, node):
+                del pathNodes[node]
         pathTups = []
         # First look for single node solutions
         for node in pathNodes.keys():
@@ -628,19 +701,26 @@ class cGraph:
         pathTups.sort()
         pathTups.reverse()
         combos = [(tup[1],) for tup in pathTups]
-        #print('pathNodes = ', pathNodes.keys())
+        if DEBUG:
+            print('findBackdoorBloockingSet: pathNodes = ', pathNodes.keys())
         # Now add any multiple field combinations.  Order is not significant here.
         multiCombos = self.getCombinations(pathNodes.keys(), maxBlocking, minOrder=2)
         combos += multiCombos
-        #print('combos = ', combos)
+        if DEBUG:
+            print('findBackdoorBloockingSet: combos = ', combos)
         for nodeSet in combos:
             testSet = set(nodeSet)
-            #print('testSet = ', list(testSet))
-            if networkx.d_separated(self.g, set(parents), {target}, testSet):
+            if DEBUG:
+                print('findBackdoorBloockingSet: testSet = ', list(testSet))
+            tempParents = set(parents)
+            for parent in parents:
+                if parent in testSet:
+                    tempParents.remove(parent)
+            if not tempParents or networkx.d_separated(vg, tempParents, {target}, testSet):
                 bSet = list(testSet)
                 break
-
-        print('BDblocking = ', bSet)
+        if DEBUG:
+            print('findBackdoorBloockingSet: BDblocking = ', bSet)
         self.bdCache[cacheKey] = bSet
         return bSet
 
@@ -699,8 +779,8 @@ class cGraph:
             if networkx.d_separated(vg, {source}, {target}, testSet):
                 bSet = list(nodeSet)
                 break
-
-        print('FDblocking = ', bSet)
+        if DEBUG:
+            print('findFrontdoorBloockingSet: FDblocking = ', bSet)
         self.fdCache[cacheKey] = bSet
         return bSet
 
