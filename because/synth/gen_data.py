@@ -94,9 +94,9 @@ class Gen:
                 varNames.append(name)
         self.varNames = varNames
         self.reset = None
-        self.init = init         
+        self.init = init
 
-    def generate(self, samples=1000, reset=False, quiet=False):
+    def generate(self, count=1000, reset=False, quiet=False):
         """
         Function to generate the synthetic dataset and write to an output file
         with the same path as the input file, but with a .csv extension.
@@ -116,7 +116,7 @@ class Gen:
             string: The path to the generated .csv data file.
         """
         assert self.semFileName is not None, 'Generate requrires that Gen was constructed with a semFilePath.'
-        samples = self.samples(samples, reset, quiet)
+        samples = self.samples(count, reset, quiet)
         # For out file, use the input file name with the .csv extension
         tokens = self.semFileName.split('.')
         outFileRoot = str.join('.',tokens[:-1])
@@ -133,7 +133,37 @@ class Gen:
         f.close()
         return outFileName
 
-    def samples(self, samples=1000, reset=False, quiet=False):
+    def getDataset(self, count=1000, reset=False, quiet=False):
+        """
+        Generates synthetic data inline and returns it in dataset format.
+        Dataset format is {varName: [samples]}.
+
+        Args:
+            count (int, optional): The number of samples to generate. 
+                    Defaults to 1000.
+            reset (bool, optional): If True, and the SEM uses noise() or
+                    coef() terms to generate arbitrary noise or coefficient
+                    parameters, will produce a new distribution. If noise() or 
+                    coef() are not used, or if set to false, will return new
+                    samples from the original distribution. Defaults to False.
+            quiet (bool, optional): True to run without status printouts.
+                    Defaults to False.
+
+        Returns:
+            dictionary: A dictionary of variable name -> list of sample values. 
+        """
+        dataset = {}
+        varNames = self.varNames
+        for var in varNames:
+            dataset[var] = []
+        insamples = self.samples(count, reset, quiet)
+        for sample in insamples:
+            for i in range(len(sample)):
+                val = sample[i]
+                dataset[varNames[i]].append(val)
+        return dataset
+
+    def samples(self, count=1000, reset=False, quiet=False):
         """
         Generator function to produce the samples.
 
@@ -196,7 +226,7 @@ class Gen:
             for varName in self.varNames:
                 cVarNames.append(compile(varName, 'err', 'eval'))
 
-            for sample in range(samples):
+            for sample in range(count):
                 outTokens = []
                 NOISE_COUNT = 0
                 COEF_COUNT = 0

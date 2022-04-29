@@ -28,8 +28,8 @@ varEquations = [
                 'B = logistic(0, 1)',
                 'F = logistic(0, 1)',
                 'G = logistic(0, 1)',
-			    'A = (B + F) / 2.0 + logistic(0,.1)',
-                'D = (A + G) / 2.0 + logistic(0,.1)',
- 			    'C = (B + A + D) / 3.0 + logistic(0,.1)',
-                'E = C + logistic(0,3)',
+			    'A = (B + F) / 2.0 + logistic(0,.5)',
+                'D = (A + G) / 2.0 + logistic(0,.5)',
+ 			    'C = (B + A + D) / 3.0 + logistic(0,.5)',
+                'E = C + logistic(0,.5)',
 		        ]

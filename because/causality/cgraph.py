@@ -74,6 +74,48 @@ class cGraph:
 
         self.bdCache = {}
         self.fdCache = {}
+        self.indepCache = {}
+        self.dirCache = {}
+
+    def setIndepCache(self, cache):
+        """
+        Set the Independence Cashe.
+        Cache is a dictionary of {cacheKey: p-val}
+        CacheKey is (source, dest, (condition-on))
+        Source, dest are variable names
+        condition-on is a tuple of variable names.
+        Note, each source dest pair should be in the cache
+        twice, once with source and dest reversed, since
+        independence(A,B) = independence(B,A)
+
+        Args:
+            cache (dictionary): A cache dictionary as above.
+        """
+        self.indepCache = cache
+
+    def setDirCache(self, cache):
+        """
+        Set the Direction cache.
+        Cache is a dictionary of {cacheKey: rho}
+        CacheKey is (source, dest).
+        Source, dest are variable names.
+        Note, each source dest pair should be in the cache
+        twice, once with source and dest reversed with the
+        value of rho negated, since dir(A, B) = -dir(B,A).
+
+        Args:
+            cache (dictionary): A Cache Dictionary as above.
+        """
+        self.dirCache = cache
+
+    def varNames(self):
+        """
+        Get a list of all variable names in canonical order.
+
+        Returns:
+            list: List of variable name strings.
+        """
+        return self.rvList
 
     def vPrint(self, varName):
         """
@@ -162,6 +204,15 @@ class cGraph:
         return False
 
     def getAncestors(self, node):
+        """
+        Get all ancestors of a given node.
+
+        Args:
+            node (string): A given variable name.
+
+        Returns:
+            list: List of ancestor variable names
+        """
         ancestors = set()
         parents = self.getParents(node)
         for parent in parents:
@@ -172,6 +223,17 @@ class cGraph:
         return list(ancestors)
 
     def isDescendant(self, ancestor, descendant):
+        """
+        Determine if a variable is a descendant of an ancestor variable.
+
+        Args:
+            ancestor (string): The ancestor variable name.
+            descendant (string): The potential descendant variable name.
+
+        Returns:
+            bool: True if descendant is actually a descendant of ancestor
+                    in the graph.  Otherwise False.
+        """
         parents = self.getParents(descendant)
         if ancestor in parents:
             return True
@@ -182,13 +244,33 @@ class cGraph:
         return False
 
     def isAdjacent(self, node1, node2):
+        """
+        Determine if two variable are adjacent in the causal model graph.
+
+        Args:
+            node1 (string): First variable name.
+            node2 (string): Second variable name.
+
+        Returns:
+            bool: True if the first and second variables are adjacent.
+                        Otherwise False.
+        """
         adj = self.getAdjacencies(node1)
         for a in adj:
             if a[0] == node2 or a[1] == node2:
                 return True
         return False
 
-    def combinations(self, inSet):
+    def combinationsxxx(self, inSet):
+        """
+        Find all combinations of a set of variable names.
+
+        Args:
+            inSet (set): A set of variable names.
+
+        Returns:
+            list: A list of all combinations of the variables in the inSet.
+        """
         c = []
         
         for i in range(len(inSet)):
@@ -198,25 +280,27 @@ class cGraph:
         return c
 
     def makeDependency(self, u, v, w, isDep):
+        """
+        Given a set of three variable names (u,v,w) and
+        an expectation of dependency, return a canonical
+        dependency tuple.  Makes sure names are in canonical
+        (alphabetical, order).
+
+        Args:
+            u (string): First variable
+            v (_type_): Second variable
+            w (_type_): Third (conditional) variable
+            isDep (bool): True if the variables are expected to be
+                    conditionaly dependent 
+
+        Returns:
+            tuple: 4-tuple --  (var, var, w, isDep)
+        """
         if u < v:
             d = (u, v, w, isDep)
         else:
             d = (v, u, w, isDep)
         return d
-
-    def calcNDependencies(self, order, n=0):
-        def combinations(n, r):
-            return math.factorial(n)/ (math.factorial(r) * math.factorial(n - r))
-        if n == 0:
-            n = len(g.nodes())
-        nDeps = n * (n-1) / 2
-        nCDeps = 0
-        for o in range(order):
-            r = o + 1
-            if r > n - 2:
-                break
-            nCDeps += nDeps * combinations(n-2, r)
-        return (nDeps, nCDeps, nDeps + nCDeps)
 
     def getCombinations(self, nodes=None, order=3, minOrder = 1):
         #print ('order = ', order)
@@ -227,6 +311,7 @@ class cGraph:
         for o in range(minOrder, order+1):
             combos = combinations(nodes, o)
             allCombos += combos
+        #print('allCombos = ', allCombos)
         return allCombos
 
 
@@ -285,39 +370,90 @@ class cGraph:
         for d in deps:
             print(self.formatDependency(d))
 
-    # Test the model for consistency with a set of data.
-    # Format for data is {variableName: [variable value]}.
-    # That is, a dictionary keyed by variable name, containing
-    # a list of data values for that variable's series.
-    # The lengths of all variable's lists should match.
-    # That is, the number of samples for each variable must
-    # be the same.
-    #
-    # Returns (confidence, numTotalTests, [numTestsPerType], [numErrsPerType], [errorDetails])
-    # Where:
-    #   - confidence is an estimate of the likelihood that the data generating process defined
-    #       by the model produced the data being tested.  Ranges from 0.0 to 1.0.
-    #   - numTotalTests is the number of independencies and dependencies implied by the model.
-    #   - numTestsPerType is a list, for each error type, 0 - nTypes, of the number of tests that
-    #       test for the given error type.
-    #   - numErrsPerType is a list, for each error type, of the number of failed tests.
-    #   - errorDetails is a list of failed tests, each with the following format:
-    #       [(errType, x, y, z, isDep, pval, errStr)]
-    #       Where:
-    #           errType = 0 (Exogenous variables not independent) or;
-    #                    1 (Expected independence not observed) or; 
-    #                   2 (Expected dependence not observed)
-    #           x, y, z are each a list of variable names that
-    #               comprise the statement x _||_ y | z.
-    #               That is x is independent of y given z.
-    #           isDep True if a dependence is expected.  False for 
-    #               independence
-    #           pval -- The p-val returned from the independence test
-    #           errStr A human readable error string describing the error
-    #   - warningDetails is a list of tests with warnings.  Format is the same as
-    #       for errorDetails above.
-    #
+    def testIndependence(self, x, y, z=[], power=1):
+        """
+        Test the independence between two variables, with zero or more
+        conditional variables.
+        Note: If A and B are independent then so are B and A.
+
+        Args:
+            x (string): The first variable name.
+            y (string): The second variable name.
+            z (list): A list of zero or more variables on which to condition.
+                        Optional, Default=[].
+
+        Returns:
+            string: P-val -- A value between 0 and 1.  Values > .5 imply independence.
+                        Values < .5 imply dependence.  Values near .5 are ambiguous.
+        """
+        cacheKey = (x, y, tuple(z))
+        #print('testing independence', cacheKey)
+        if cacheKey in self.indepCache:
+            independence = self.indepCache[cacheKey]
+        else:
+            dependence = self.iProb.dependence(x, y, z, power=power)
+            independence = 1 - dependence
+            self.indepCache[cacheKey] = independence
+            reverseKey = (y, x, tuple(z))
+            self.indepCache[reverseKey] = independence
+        return independence
+
+    def testDependence(self, x, y, z=[], power=1):
+        """
+        Test the dependence between two variables, with zero or more
+        conditional variables.
+        Note: If A and B are dependent then so are B and A.
+
+        Args:
+            x (string): The first variable name.
+            y (string): The second variable name.
+            z (list): A list of zero or more variables on which to condition.
+                        Optional, Default=[].
+
+        Returns:
+            string: P-val -- A value between 0 and 1.  Values < .5 imply independence.
+                        Values > .5 imply dependence.  Values near .5 are ambiguous.
+        """
+        return 1 - self.testIndependence(x, y, z, power=power)
+
+
     def TestModel(self, data=None, order=3, power=1, deps=None, edges=None):
+        """
+        Test the model for consistency with a set of data.
+        Format for data is {variableName: [variable value]}.
+        That is, a dictionary keyed by variable name, containing
+        a list of data values for that variable's series.
+        The lengths of all variable's lists should match.
+        That is, the number of samples for each variable must
+        be the same.
+
+        Returns: 
+            tuple: (confidence, numTotalTests, [numTestsPerType], [numErrsPerType], [errorDetails])
+        Where:
+            - confidence is an estimate of the likelihood that the data generating process defined
+            by the model produced the data being tested.  Ranges from 0.0 to 1.0.
+            - numTotalTests is the number of independencies and dependencies implied by the model.
+            - numTestsPerType is a list, for each error type, 0 - nTypes, of the number of tests that
+            test for the given error type.
+            - numErrsPerType is a list, for each error type, of the number of failed tests.
+            - errorDetails is a list of failed tests, each with the following format:
+                [(errType, x, y, z, isDep, pval, errStr)]
+                Where:
+                    errType = 
+                        0 (Exogenous variables not independent) or;
+                        1 (Expected independence not observed) or; 
+                        2 (Expected dependence not observed) or;
+                        3 (Incorrect Direction)
+                    x, y, z are each a list of variable names that
+                        comprise the statement x _||_ y | z.
+                        That is x is independent of y given z.
+                    isDep True if a dependence is expected.  False for 
+                        independence
+                    pval -- The p-val returned from the independence test
+                    errStr A human readable error string describing the error
+            - warningDetails is a list of tests with warnings.  Format is the same as
+                for errorDetails above.
+        """
         # Standardize the data before doing independence testing
         warningPenalty = .0025
         iData = {}
@@ -341,7 +477,8 @@ class cGraph:
             x, y, z, isDep = dep
             if z is None:
                 z = []
-            pval = independence.test(ps, [x], [y], z, power=power)
+            #pval = independence.test(ps, [x], [y], z, power=power)
+            pval = self.testIndependence(x, y, z, power=power)
             print(x, y, z)
             errStr = None
             warnStr = None
@@ -441,8 +578,33 @@ class cGraph:
         confidence = max([confidence, 0.0])
         return confidence
 
+
     def testDirection(self, x, y):
-        rho = direction.test_direction(self.data[x], self.data[y])
+        """
+        Test the implied directionality between two variables.
+        rho > 0 implies forward direction (i.e. x -> y).
+        rho < 0 implies reverse direction (i.e. Y -> x).
+        rho ~= 0 means direction cannot be determined.
+
+        Args:
+            x (string): the source variable name
+            y (string): the destination variable name
+
+        Returns:
+            float: rho as described above.
+        """
+        cacheKey = (x,y)
+        if cacheKey in self.dirCache:
+            rho = self.dirCache[cacheKey]
+        else:
+            #rho = direction.test_direction(self.data[x], self.data[y])
+            # Use standardized data
+            rho = direction.test_direction(self.iProb.ds[x], self.iProb.ds[y])
+            # Add result to cache
+            self.dirCache[cacheKey] = rho
+            # Add reverse result to cache, with reversed rho
+            reverseKey = (y,x)
+            self.dirCache[reverseKey] = -rho
         return rho
 
     def testAllDirections(self, edges=None):
@@ -462,7 +624,7 @@ class cGraph:
             results.append((isError, x, y, rho))
         return results
 
-    def causalOrder(self):
+    def causalOrder(self, power=1):
         maxTries = 10
         cOrder = []
         while len(cOrder) < len(self.rvList):
@@ -479,7 +641,8 @@ class cGraph:
                     var3 = cOrder[j]
                     if var3 == var1 or var3 == var2:
                         continue
-                    dep = self.iProb.dependence(var1, var2, var3, raw=True)
+                    dep = self.testDependence(var1, var2, [var3], power=power)
+                    #dep = self.iProb.dependence(var1, var2, var3, raw=True)
                     #print('dep', var1, var2, var3, '=', dep)
                     if dep < lowestDep:
                         lowestDep = dep
@@ -496,7 +659,7 @@ class cGraph:
             print('cGraph.causalOrder: Could not converge to a definite order.')
         return cOrder
 
-    def findExogenous(self, exclude=[]):
+    def findExogenous(self, exclude=[], power=1):
         rvList = self.rvList
         rvList.sort()
         accum = {}
@@ -512,7 +675,7 @@ class cGraph:
                 y = rvList[j]
                 if x == y or y in exclude:
                     continue
-                R = direction.test_direction(self.data[x], self.data[y])
+                R = self.testDirection(x, y)
 
                 if R > 0:
                     leastCausal = y
@@ -529,7 +692,8 @@ class cGraph:
             else:
                 isExo = True
                 for exo in exos:
-                    pval = independence.test(self.iProb, [var], [exo])
+                    pval = self.testIndependence(var, exo, power=power)
+                    #pval = independence.test(self.iProb, [var], [exo])
                     #print('ind ', var, '-', exo, ' = ', pval)
                     if pval < .5:
                         isExo = False
@@ -541,13 +705,14 @@ class cGraph:
                     break
         return exos
 
-    def findChildVars(self, parentList):
+    def findChildVars(self, parentList, power=1):
         outMap = []
         for var in self.rvList:
             for pvar in parentList:
                 if var in parentList:
                     continue
-                pval = self.iProb.independence(pvar, var)
+                #pval = self.iProb.independence(pvar, var)
+                pval = self.testIndependence(pvar, var, power=power)
                 isInd = False
                 if pval > .5:
                     isInd = True
