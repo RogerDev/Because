@@ -102,7 +102,7 @@ class Gen:
         with the same path as the input file, but with a .csv extension.
 
         Args:
-            samples (int, optional): The number of multivariate
+            count (int, optional): The number of multivariate
                     samples to generate. Defaults to 1000.
             reset (bool, optional): If True, and the SEM uses noise() or
                     coef() terms to generate arbitrary noise or coefficient
@@ -168,7 +168,7 @@ class Gen:
         Generator function to produce the samples.
 
         Args:
-            samples (int, optional): The number of multivariate
+            count (int, optional): The number of multivariate
                     samples to generate. Defaults to 1000.
             reset (bool, optional): If True, and the SEM uses noise() or
                     coef() terms to generate arbitrary noise or coefficient
@@ -367,7 +367,7 @@ if __name__ == '__main__':
         #print('filename, datacount = ', filename, datacount)
         if filename is not None:
             gen = Gen(filename)
-            gen.generate(samples=datacount)
+            gen.generate(count=datacount)
         print ('SEM = ', gen.getSEM())
         print('Generated ', datacount, 'records.')
 

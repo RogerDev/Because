@@ -185,5 +185,5 @@ if __name__ == '__main__':
         print('Note: before running generate data for SEM file:')
         print('because/probability/test/models/probTestDat.py')
     else:
-        filename = 'probability/test/models/probTestDat.csv'
+        filename = "probability/test/models/probTestDat.csv"
         run(filename)

@@ -46,7 +46,7 @@ print('E(B) ', bBar)
 aStd = g.prob.distr('A').stDev()
 print('std(A) = ', aStd)
 bStd = g.prob.distr('B').stDev()
-print('std(A) = ', bStd)
+print('std(B) = ', bStd)
 
 aHigh = aBar + .5 * aStd
 aLow = aBar - .5 * aStd
