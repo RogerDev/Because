@@ -34,13 +34,13 @@ _cGraph.py_ (Causal Graph) is the heart of the system.  It accepts a multivariat
 
 ### Assessing a synthetic model:
 
-The command line program cTest will utilize cGraph.py and a synthetic model with generated data to determine the extent to which the defined Causal Model is consistent with the generated data.
+The command line program validationTest will utilize validationTest.py and a synthetic model with generated data to determine the extent to which the defined Causal Model is consistent with the generated data.
 
-    python causality/cTest.py <model file> [<numRecords>]
+    python causality/test/validationTest.py <model file> [<numRecords>]
 
     Example:
-        python causality/cTest.py models/M3.py
-        python causality/cTest.py models/M3.py 10000
+        python causality/test/validationTest.py models/M3.py
+        python causality/test/validationTest.py models/M3.py 10000
 
 
     If <numRecords> is not provided then all generated records will be used.
@@ -52,10 +52,10 @@ The command line program cTest will utilize cGraph.py and a synthetic model with
 
 _interventionTest.py_ provides a test and demonstration of the intervention logic, and causal metrics.  It is hard coded to test between variables 'A' and 'C', but can be modified locally to test any desired variables.  It demonstrates use of cGraph and  getData.
 
-    python causality/interventionTest.py <model file>
+    python causality/test/interventionTest.py <model file>
 
     Example:
-        python  causality/interventionTest.py models/M3.py
+        python  causality/test/interventionTest.py models/M3.py
 
 ## Probability Methods
 
