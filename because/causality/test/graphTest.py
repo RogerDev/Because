@@ -1,6 +1,6 @@
 """
     Present a plot of the distributions for the given .py test file
-    python3 Probabiity/probPlot.py <testfilepath>.py
+    python3 causality/test/graphTest.py <testfilepath>.py
     Data should previously have been generated using:
     python3 synth/synthDataGen.py <testfilepath>.py <numRecs>
 """

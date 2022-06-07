@@ -52,7 +52,7 @@ varEquations = [
 				# D is a linear function of D, with a random coefficient,
 				# and with random amount of unspecified noise.
 				# Generally it is better to add your own noise and coefs
-				# as in B above, but this is usefule for generating a
+				# as in B above, but this is useful for generating a
 				# wide range of tests.  If coef() or noise() is used,
 			    # then each run will generate samples from a different
 				# multivariate distribution.

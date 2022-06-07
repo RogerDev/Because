@@ -51,7 +51,7 @@ class ProbSpace:
             cMethod determines the methods used for conditional probability of continuous variables.
             - 'u' default uses U-Prob, which automatically balances between D-Prob and J-Prob
             - 'd' forces D-Prob
-            - 'j' forcs J-Prob
+            - 'j' forces J-Prob
 
             The main functions of ProbSpace are:
             - P(...) -- Returns the numerical probability of an event, given a set of conditions.
