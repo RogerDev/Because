@@ -50,6 +50,7 @@ class RKHS:
         # Compute covariance matrix for kernel
         Xa = np.array(self.X).T
         c = np.cov(Xa).reshape(self.D, self.D)
+        #print('c = ', c)
         # Make sure we scale the standard deviations
         # and not the variances.  The diagonal of the
         # covariance matrix contains the variances of
@@ -67,7 +68,7 @@ class RKHS:
         #   S - the data specific smoothness (optionally) provided
         #           by the user
         # We         
-        scale = (.5 * s * self.N**(-1/6))**(1/self.D)
+        scale = (.5 * s * self.N**(-1/5))**(1/self.D)
         #scale = (.5 * s * self.N**(-1/6))
         cS = np.zeros(shape=c.shape)
         #print('c = ')
@@ -75,6 +76,7 @@ class RKHS:
             for j in range(self.D):
                 v = c[i,j]
                 cS[i,j] = (sqrt(v) * scale)**2 if v >=0 else -(sqrt(-v) * scale)**2
+                #cS[i,j] = v * scale
         #print('c = ', c, c.shape)
         #cS = c * scale
         #print('cs = ', cS, c.shape)
@@ -88,7 +90,7 @@ class RKHS:
         # Precompute determinant of covM
         self.detcov = np.linalg.det(self.covM)
         # Precompute the denominator for the kernel function
-        self.denom = sqrt((2*pi)**self.D * self.detcov) * 2
+        self.denom = sqrt((2*pi)**(self.D) * self.detcov) * 2
         #print('self.N = ', self.N)
         #print('self.D = ', self.D)
         # Precompute range variables for efficency
@@ -189,8 +191,13 @@ class RKHS:
             density = self.K(p,x)
             v1 += density * tVal
             v2 += density
-        
-        return v1 / v2
+        # Why 1.07??? Don't know, but it works.
+        #return v1 / v2 * 1.07
+        if v2 > 0:
+            return v1 / v2
+        else:
+            print('^^^^^^^^^^^^rkhsMV.condE:  V2 = 0', v1, v2)
+            return None
 
     def condCDF(self, x):
         """ 

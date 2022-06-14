@@ -23,6 +23,10 @@ from because.probability.rkhs.rkhsMV import RKHS
 
 tries = 1
 datSize = 200
+power = 3
+lim = 2  # Std's from the mean to test conditionals
+numPts = 30 # How many eval points for each conditional
+ 
 # Arg format is  <datSize>
 dims = 3
 smoothness = 1
@@ -33,7 +37,7 @@ if len(sys.argv) > 2:
     smoothness = float(sys.argv[2])
 print('dims, datSize, tries = ', dims, datSize, tries)
 
-test = 'models/doubleCondition.py'
+test = 'probability/test/models/doubleCondition.py'
 
 f = open(test, 'r')
 exec(f.read(), globals())
@@ -41,6 +45,7 @@ exec(f.read(), globals())
 print('Testing: ', test, '--', testDescript)
 
 # For dat file, use the input file name with the .csv extension
+
 tokens = test.split('.')
 testFileRoot = str.join('.',tokens[:-1])
 datFileName = testFileRoot + '.csv'
@@ -52,17 +57,14 @@ dp_run = []
 up_run = []
 for i in range(tries):
     gen = gen_data.Gen(test)
-    sdg = gen.generate(datSize)
-    d = read_data.Reader(datFileName)
-    data = d.read()
+    data = gen.getDataset(datSize)
 
 
-    prob1 = ProbSpace(data, cMethod='d!')
-    prob2 = ProbSpace(data, cMethod='j')
-    prob3 = ProbSpace(data, cMethod='u')
 
-    lim = 3  # Std's from the mean to test conditionals
-    numPts = 30 # How many eval points for each conditional
+    prob1 = ProbSpace(data, cMethod='d!', power=power)
+    prob2 = ProbSpace(data, cMethod='j', power=power)
+    prob3 = ProbSpace(data, cMethod='u', power=power)
+
     print('Test Limit = ', lim, 'standard deviations from mean')
     print('Dimensions = ', dims, '.  Conditionals = ', dims - 1)
     print('Number of points to test for each conditional = ', numPts)
@@ -137,7 +139,19 @@ for i in range(tries):
     up_est = []
     # Generate the target values for comparison
     for t in tps:
-        cmpr = tanh(t[0]) + sin(t[1])
+        condSpec = []
+        for c in range(dims-1):
+            condVar = cond[c]
+            val = t[c]
+            spec = (condVar, val)
+            condSpec.append(spec)
+        cum = 0.0
+        smoothing = 200
+        for i in range(smoothing):
+            test = gen.calcOne(target, condSpec)
+            cum += test
+        cmpr = cum / smoothing
+        #cmpr = tanh(t[0]) + sin(t[1])
         cmprs.append(cmpr)
         xt1.append(t[0])
         yt1.append(t[1])
@@ -152,7 +166,7 @@ for i in range(tries):
             val = t[c]
             spec = (condVar, val)
             condspec.append(spec)
-        y_x = prob2.E(target, condspec)
+        y_x = prob2.E(target, condspec, smoothness=.25)
 
         jp_est.append(y_x)
         xt2.append(t[0])
@@ -168,7 +182,7 @@ for i in range(tries):
             val = t[c]
             spec = (condVar, val)
             condspec.append(spec)
-        y_x = prob3.E(target, condspec)
+        y_x = prob3.E(target, condspec, smoothness=.25)
 
         up_est.append(y_x)
         xt4.append(t[0])

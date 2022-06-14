@@ -246,6 +246,27 @@ class Gen:
             success = True
         return
 
+    def calcOne(self, target, givens=[]):
+        """
+        Calculate the value of one variable after setting the values of other variables
+
+        Args:
+            target (string): A variable name.
+            givens (list): A list of tuples (<givenVar>, <givenVal>).  This must include
+            any variables upon which the target is dependent.
+        Returns:
+            float: The value of the target variable.
+        """
+        locs = locals()
+        for given in givens:
+            var, val = given
+            locs[var] = val          
+        for varEquation in varEquations:
+            if varEquation[:len(target)] == target:
+                exec(varEquation, globals(), locs)
+                break
+        return eval(target)
+
     def getVariables(self):
         """
         Return a list of variable names in the same order as the samples.

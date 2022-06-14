@@ -47,9 +47,9 @@ varEquations = [
                 'C = A + B',
                 'N = normal(0,1)',
                 'N2 = N + normal(1,1)',
-                'IVB = logistic(0,1)',
-                'IVA = IVB + logistic(0, .1)',
-                'IVC = 0 * IVA + IVB + logistic(0, .1)',
+                'IVB = logistic(0, 1)',
+                'IVA = IVB + logistic(0, .5)',
+                'IVC = 0 * IVA + 2 * IVB + logistic(0, .5)',
                 'EXP = exponential()',
                 't = t + 1'
 		        ]

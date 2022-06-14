@@ -9,6 +9,7 @@ except:
     pass
 from because.probability.pdf import PDF
 from because.probability import uprob
+from because.probability.rkhs import rkhsMV
 
 DEBUG = False
 
@@ -80,6 +81,8 @@ class ProbSpace:
         self.N = self.aData.shape[1]
         self.probCache = {} # Probability cache
         self.distrCache = {} # Distribution cache
+        self.expCache = {} # Expectation cache
+        self.rkhsCache = {} # RKHS Cache
         self.fieldAggs = self.getAgg(ds)
         if self.N:
             if discSpecs:
@@ -233,7 +236,8 @@ class ProbSpace:
             newPS = ProbSpace(filtDat, power = power, density = density, cMethod = self.cMethod)
         newPS.parentProb = parentProb
         newPS.parentQuery = finalQuery
-        #print('new N = ', newPS.N)
+        if DEBUG:
+            print('ProbSpace.Subspace:  Query = ', finalQuery, ', N = ', newPS.N)
         return newPS
 
     def filter(self, filtSpec, minPoints=None, maxPoints=None):
@@ -253,7 +257,9 @@ class ProbSpace:
             See FilteredSpace documentation (above) for details.
         """
         maxAttempts = 8
-        delta = .1
+        maxDelta = .4 / log(self.N, 10)
+        #print('filterDat: maxDelta = ', maxDelta)
+        delta = maxDelta / 2.0
         minPoints_default = max([min([100, sqrt(self.N)]), 20])
         maxPoints_default = max([min([1000, int(self.N / 2)]), minPoints_default * 5])
         if minPoints is None:
@@ -341,12 +347,18 @@ class ProbSpace:
             elif ratio < (1/maxFactor):
                 ratio = 1/maxFactor
             #print('ratio2 = ', ratio)
-            if remaining < minPoints:
-                delta *= ratio
-            elif remaining > maxPoints:
-                delta *= ratio
+            if remaining < minPoints or remaining > maxPoints:
+                # Outside of range.  Scale up or down.
+                newDelta = delta * ratio
             else:
-                break
+                # We're in range.  Set newDelta to 0 to exit loop
+                newDelta = 0
+            if newDelta == 0 or newDelta > maxDelta:
+                # If we're in range or if we've exceeded maxDelta, break out of loop.
+                break 
+            else:
+                # Continue in loop with a new delta.
+                delta = newDelta
         if DEBUG and progressive:
             print('attempt = ', attempt, ', delta = ', delta, ', remaining = ', remaining, ', minPoints, maxPoints = ', minPoints, maxPoints)
             #print('finalQuery = ', filtSpec2, ', parentProb = ', remaining/self.N, ', parentN = ', self.N)
@@ -376,22 +388,293 @@ class ProbSpace:
         hashKey = (targetSpec, givenSpec)
         return hashKey
 
-    def E(self, target, givensSpec=None, power=None):
+    def normalizeSpecs(self, inSpecs):
+        """
+        Normalize a target or conditional spec so that it is always:
+        [spec], where spec is a 1, 2, or 3 tuple (varName,), (varName, val),
+        or (varName, lowVal, highVal).
+        """
+        if inSpecs is None:
+            # Return an empty list for None
+            return []
+        if type(inSpecs) == type([]):
+            # List.
+            pass
+        else:
+            # Not in list form.  Put it in a list
+            inSpecs = [inSpecs]
+        outSpecs = []
+        for inSpec in inSpecs:
+            if type(inSpec) == type((1,)):
+                # It's a tuple. We're done
+                outSpecs.append(inSpec)
+            else:
+                # Must be a bare variable.  Put in a tuple.
+                outSpecs.append((inSpec,))
+        return outSpecs
+
+    def specsAreBound(self, inSpecs):
+        """
+        inSpecs must be a nomalized spec.
+        """
+        for spec in inSpecs:
+            if len(spec) == 1:
+                return False
+        return True
+
+    def getCondSpace(self, givenSpecs, Dtarg=1):
+        """
+        Get a new ProbSpace filtered by the bound givenSpecs.  This is
+        the conditional space.
+        """
+        Dfilt = len(givenSpecs)
+        Dquery = Dtarg + Dfilt
+        Ntarg = self.N**(Dtarg / Dquery)
+        minP = .8 * Ntarg
+        maxP = 1.2 * Ntarg
+        ss = self.SubSpace(givenSpecs, minPoints=minP, maxPoints=maxP)
+        if DEBUG:
+            print('ProbSpace.getCondSpace: ssN, min, max, query = ', ss.N, minP, maxP, ss.parentQuery)
+        return ss
+
+    def E(self, targetSpecs, givenSpecs=None, power=None, cMethod=None, smoothness=1.0):
         """ Returns the expected value (i.e. mean) of the distribution
             of a single variable given a set of conditions.  This is
             a convenience function equivalent to:
                 distr(target, givensSpec).E()
 
-            targetSpec is a single variable name.
-            givensSpec is a conditional specification (see distr below
+            targetSpecs is a single variable name.
+            givenSpecs is a conditional specification (see distr below
             for format)
         """
-        d = self.distr(target, givensSpec, power=power)
-        if d.N == 0:
-            return None
-        return d.E()
+        if power is None:
+            power = self.power
+        if cMethod is None:
+            cMethod = self.cMethod
+        targetSpecs = self.normalizeSpecs(targetSpecs)
+        givenSpecs = self.normalizeSpecs(givenSpecs)
+        if DEBUG:
+            print('ProbSpace.E: E(' , targetSpecs, '|', givenSpecs , ')')
+        assert len(targetSpecs) == 1, 'ProbSpace.E: target must be singular.  Got ' + str(targetSpecs)
+        assert not self.specsAreBound(targetSpecs), 'ProbSpace.E: target must be unbound (i.e. a bare variable name or 1-tuple).  Got ' + str(targetSpecs)
+        target = targetSpecs[0][0] # Single bare variable
+        cacheKey = self.makeHashkey(target, givenSpecs)
+        if cacheKey in self.expCache.keys():
+            return self.expCache[cacheKey]
+        if not givenSpecs:
+            # Unconditional Expectation
+            indx = self.fieldIndex[target]
+            dat = self.aData[indx]
+            #print('len(dat) = ', len(dat))
+            if len(dat) == 0:
+                # No data.  We can't know the expected value.  Return None.
+                result = 0
+            else:
+                result = np.mean(self.aData[indx])
+        else:
+            if cMethod[0] == 'd':  # d or d!
+                #print('***** Discrete')
+                result = self.Edisc(target, givenSpecs, power)
+            elif cMethod == 'u':  #uprob
+                #print('***** Uprob')
+                result = self.Eup(target, givenSpecs, power, smoothness=smoothness)
+            else:
+                #print('***** MV')
+                result = self.Emv(target, givenSpecs, power, smoothness=smoothness)
+        self.expCache[cacheKey] = result
+        return result
 
-    def prob(self, targetSpec, givenSpec=None):
+    def Edisc(self, target, givenSpecs, power):
+        # Conditional Expectation
+        condSpecs, filtSpecs = self.separateSpecs(givenSpecs)
+        if not condSpecs:
+            # Straight (bound) conditioning
+            Dtarg = len(condSpecs) + 1
+            ss = self.getCondSpace(filtSpecs)
+            result = ss.E(target)
+        else:
+            # Conditionalization and possibly conditioning as well.
+            # Conditionalize on all indicated variables. I.e.,
+            # SUM(P(filteredY | Z=z) * P(Z=z)) for all z in Z.
+            Dtarg = 1 # The target dim.
+            Dfilt = len(filtSpecs)  # Filterning Dom
+            Dcond = len(condSpecs)  # Conditionalize Dim
+            Dquery = Dtarg + Dfilt + Dcond # Query Dim
+            Nfilt = self.N**((Dtarg + Dcond)/Dquery) # Number of points to return from filter
+            # First, we filter on the bound conditions (if any), then conditionalize on the reduced set
+            if filtSpecs:
+                minP_Filt = .8 * Nfilt
+                maxP_Filt = 1.2 * Nfilt
+                ss = self.SubSpace(filtSpecs, minPoints=minP_Filt, maxPoints=maxP_Filt)
+                #print('ss.N, min, max = ', ss.N, minP_Filt, maxP_Filt)
+            else:
+                ss = self
+            condFiltSpecs = self.getCondSpecs(condSpecs, power=power, effN=ss.N)
+            accum = 0.0
+            allProbs = 0.0
+            for cf in condFiltSpecs:
+                # Create a new subspace filtered by both the bound and unbound conditions
+                # Note that progressive filtering will be used for the unbound conditions.
+                # probYgZ is P(Y | Z=z) e.g., P(Y | X=1, Z=z)
+                exp = ss.E(target, cf)
+                # If expectation is None it means we can't find any points, so we have no
+                # knowledge of the expectation.  Skip.
+                if exp is None:
+                    continue
+                probZ = self.P(cf)
+                #print('probZ = ', probZ, ', exp = ', exp,  ', ss.N = ', ss.N)
+                if probZ == 0:
+                    # Zero probability -- don't bother accumulating
+                    continue
+                accum += exp * probZ
+                allProbs += probZ
+            result = accum / allProbs
+        return result
+
+    def Emv(self, target, givenSpecs, power, smoothness=1.0):
+        # Conditional Expectation
+        condSpecs, filtSpecs = self.separateSpecs(givenSpecs)
+
+        if not condSpecs:
+            # Straight (bound) conditioning
+
+            filtVars = [filtSpec[0] for filtSpec in filtSpecs]
+            filtVals = []
+            for filtSpec in filtSpecs:
+                if len(filtSpec) == 2:
+                    filtVals.append(filtSpec[1])
+                else:
+                    filtVals.append((filtSpec[1] + filtSpec[2]) / 2.0)
+            # Try to get rkhs from cache.  Otherwise create it.
+            cacheKey = (tuple(filtVars), smoothness)
+            if cacheKey in self.rkhsCache.keys():
+                R = self.rkhsCache[cacheKey]
+            else:
+                R = rkhsMV.RKHS(self.ds, includeVars=filtVars, s=smoothness)
+                self.rkhsCache[cacheKey] = R
+            result = R.condE(target, filtVals)
+        else:
+            # Conditionalization and possibly conditioning as well.
+            # Conditionalize on all indicated variables. I.e.,
+            # SUM(P(filteredY | Z=z) * P(Z=z)) for all z in Z
+            condFiltSpecs = self.getCondSpecs(condSpecs, power=power)
+            accum = 0.0
+            allProbs = 0.0
+            condVars = [spec[0] for spec in filtSpecs] + [spec[0] for spec in condFiltSpecs[0]]
+            # Try to get rkhs from cache.  Otherwise create it.
+            cacheKey = (tuple(condVars), smoothness)
+            if cacheKey in self.rkhsCache.keys():
+                R = self.rkhsCache[cacheKey]
+            else:
+                R = rkhsMV.RKHS(self.ds, includeVars=condVars, s=smoothness)
+                self.rkhsCache[cacheKey] = R
+            condVars2 = [spec[0] for spec in condFiltSpecs[0]]
+            cacheKey = (tuple(condVars2), smoothness)
+            if cacheKey in self.rkhsCache.keys():
+                R2 = self.rkhsCache[cacheKey]
+            else:
+                R2 = rkhsMV.RKHS(self.ds, includeVars=condVars2, s=smoothness)
+                self.rkhsCache[cacheKey] = R2
+            for cf in condFiltSpecs:
+                specs = filtSpecs + cf
+                condVals = []
+                for spec in specs:
+                    if len(spec) == 2:
+                        condVals.append(spec[1])
+                    else:
+                        condVals.append((spec[1] + spec[2]) / 2.0)
+                exp = R.condE(target, condVals)
+                if exp is None:
+                    continue
+                condVals2 = condVals[len(filtSpecs):]
+                #probZ = R2.P(condVals2)
+                probZ = self.P(cf)
+                #print('probZ = ', probZ, ', exp = ', exp, condVals)
+                if probZ == 0:
+                    # Zero probability -- don't bother accumulating
+                    continue
+                accum += exp * probZ
+                allProbs += probZ
+            result = accum / allProbs
+        return result
+
+    def Eup(self, target, givenSpecs, power, smoothness=1.0):
+        # Conditional Expectation
+        condSpecs, filtSpecs = self.separateSpecs(givenSpecs)
+
+        if not condSpecs:
+            # Straight (bound) conditioning
+            if len(filtSpecs) > 1:
+                filt = filtSpecs[0]
+                filtSpecs = filtSpecs[1:]
+                ss = self.getCondSpace([filt], Dtarg=len(filtSpecs)+1)
+            else:
+                ss = self
+            filtVars = [filtSpec[0] for filtSpec in filtSpecs]
+            filtVals = []
+            for filtSpec in filtSpecs:
+                if len(filtSpec) == 2:
+                    filtVals.append(filtSpec[1])
+                else:
+                    filtVals.append((filtSpec[1] + filtSpec[2]) / 2.0)
+            # Try to get rkhs from cache.  Otherwise create it.
+            cacheKey = (tuple(filtVars), smoothness)
+            if cacheKey in ss.rkhsCache.keys():
+                R = ss.rkhsCache[cacheKey]
+            else:
+                R = rkhsMV.RKHS(ss.ds, includeVars=filtVars, s=smoothness)
+                ss.rkhsCache[cacheKey] = R
+            result = R.condE(target, filtVals)
+        else:
+            # Conditionalization and possibly conditioning as well.
+            # Conditionalize on all indicated variables. I.e.,
+            # SUM(P(filteredY | Z=z) * P(Z=z)) for all z in Z
+            Dtarg = len(condSpecs) + 1
+            ss = self.getCondSpace(filtSpecs, Dtarg=Dtarg)
+            #print('ss.N = ', ss.N)
+            condFiltSpecs = self.getCondSpecs(condSpecs, power=power)
+            accum = 0.0
+            allProbs = 0.0
+            condVars = [spec[0] for spec in condFiltSpecs[0]]
+            # Try to get rkhs from cache.  Otherwise create it.
+            cacheKey = (tuple(condVars), smoothness)
+            if cacheKey in ss.rkhsCache.keys():
+                R = ss.rkhsCache[cacheKey]
+            else:
+                R = rkhsMV.RKHS(ss.ds, includeVars=condVars, s=smoothness)
+                ss.rkhsCache[cacheKey] = R
+            condVars2 = [spec[0] for spec in condFiltSpecs[0]]
+            cacheKey = (tuple(condVars2), smoothness)
+            if cacheKey in self.rkhsCache.keys():
+                R2 = self.rkhsCache[cacheKey]
+            else:
+                R2 = rkhsMV.RKHS(ss.ds, includeVars=condVars2, s=smoothness)
+                self.rkhsCache[cacheKey] = R2
+            
+            for cf in condFiltSpecs:
+                specs = cf
+                condVals = []
+                for spec in specs:
+                    if len(spec) == 2:
+                        condVals.append(spec[1])
+                    else:
+                        condVals.append((spec[1] + spec[2]) / 2.0)
+                exp = R.condE(target, condVals)
+                if exp is None:
+                    continue
+                condVals2 = condVals
+                probZ = R2.P(condVals2)
+                #probZ = self.P(cf)
+                #print('probZ = ', probZ, ', exp = ', exp, condVals)
+                if probZ == 0:
+                    # Zero probability -- don't bother accumulating
+                    continue
+                accum += exp * probZ
+                allProbs += probZ
+            result = accum / allProbs
+        return result
+
+    def prob(self, targetSpecs, givenSpecs=None, power=None):
         """ Return the probability of a variable or (set of variables)
             attaining a given value (or range of values) given a set
             of conditionalities on other variables.
@@ -436,39 +719,36 @@ class ProbSpace:
             For example:
             - P(A=1 | B=2, C) is: sum over all (C=c) values( P(A=1 | B=2, C=c) * P(C=c))
         """
-        if givenSpec is None:
-            givenSpec = []
-        if type(givenSpec) != type([]):
-            givenSpec = [givenSpec]
-        cacheKey = self.makeHashkey(targetSpec, givenSpec)
+        if power is None:
+            power = self.power
+        targetSpecs = self.normalizeSpecs(targetSpecs)
+        givenSpecs = self.normalizeSpecs(givenSpecs)
+        if DEBUG:
+            print('ProbSpace.P: P(' , targetSpecs, '|', givenSpecs , ')')
+        assert self.specsAreBound(targetSpecs), 'ProbSpace.P: target must be bound (i.e. include a value or value range).  Got ' + str(targetSpecs)
+        cacheKey = self.makeHashkey(targetSpecs, givenSpecs)
         if cacheKey in self.probCache.keys():
             return self.probCache[cacheKey]
-        if type(targetSpec) == type([]):
-            # Joint probability
-            # Separate unbound (e.g. A) specifications from bound (e.g. A=1) specifications
-            # Prob doesn't return unbound results.
-            targetSpecU, targetSpec = self.separateSpecs(targetSpec)
-            assert len(targetSpecU) == 0, 'prob.P: All target specifications must be bound (i.e. specified as tuples).  For unbound returns, use distr.)'
-            result = self.jointProb(targetSpec, givenSpec)
-            self.probCache[cacheKey] = result
+        if givenSpecs:
+            # We have conditionals
+            assert self.specsAreBound(givenSpecs), 'ProbSpace.P: givens must be bound (i.e. include a value or value range). ' + \
+                                                    'Conditionalization not supported  Got ' + str(targetSpecs)
+            ss = self.getCondSpace(givenSpecs, Dtarg=len(targetSpecs))
         else:
-            rvName = targetSpec[0]
-            if len(targetSpec) == 2:
-                valSpec = targetSpec[1]
-            else:
-                valSpec = targetSpec[1:]
-            d = self.distr(rvName, givenSpec)
-            if d.N > 0:
-                result = d.P(valSpec)
-            else:
-                result = None
-            self.probCache[cacheKey] = result
+            # Marginal probability
+            ss = self
+        if ss.N > 0:
+            ss2 = ss.getCondSpace(targetSpecs)
+            result = ss2.N / ss.N
+        else:
+            result = 0
+        self.probCache[cacheKey] = result
         return result
 
     P = prob
 
 
-    def distr(self, rvName, givenSpecs=None, power=None):
+    def distr(self, targetSpecs, givenSpecs=None, power=None):
         """Return a univariate probability distribution as a PDF (see pdf.py) for the random variable
            indicated by rvName.
            If givenSpec is provided, then will return the conditional distribution,
@@ -480,7 +760,7 @@ class ProbSpace:
             - P(Y | X=x, Z) -- i.e. Conditionalize on Z
             - P(Y | X=x, Z1, ... Zk) -- Conditionalize on multiple variables
 
-            rvName is the name of the random variable whose distribution is requested.
+            targetSpecs is the name of the random variable whose distribution is requested.
             givenSpec (given specification) defines the conditions (givens) to
             be applied.
             A given specification may take one of several forms:
@@ -492,7 +772,7 @@ class ProbSpace:
             - variable name: A variable to conditionalize on.
             - list of any of the above or any combination of above.
 
-            Examples:
+            Examples:P
             - distr('Y') -- The (marginal) probability of Y
             - distr('Y', [('X', 1)]) -- The probability of Y given X=1.
             - distr('Y', [('X', 1, 2)]) -- The probability of Y given 1 <= X < 2.
@@ -510,15 +790,16 @@ class ProbSpace:
 
         if power is None:
             power = self.power
-        if givenSpecs is None:
-            givenSpecs = []
-        if type(givenSpecs) != type([]):
-            givenSpecs = [givenSpecs]
-        cacheKey = self.makeHashkey(rvName, givenSpecs)
-        if cacheKey in self.distrCache.keys():
-             return self.distrCache[cacheKey]
+        targetSpecs = self.normalizeSpecs(targetSpecs)
+        givenSpecs = self.normalizeSpecs(givenSpecs)
+        assert len(targetSpecs) == 1, 'ProbSpace.distr: target must be singular.  Got ' + str(targetSpecs)
+        assert not self.specsAreBound(targetSpecs), 'ProbSpace.distr: target must be unbound (i.e. a bare variable or 1-tuple).  Got ' + str(targetSpecs)
+        rvName = targetSpecs[0][0]
         if DEBUG:
             print('ProbSpace.distr: P(' , rvName, '|', givenSpecs , ')')
+        cacheKey = self.makeHashkey(rvName, givenSpecs)
+        if cacheKey in self.probCache.keys():
+            return self.probCache[cacheKey]
         isDiscrete = self.isDiscrete(rvName)
         indx = self.fieldIndex[rvName]
         dSpec = self.discSpecs[indx]
@@ -557,20 +838,6 @@ class ProbSpace:
             else:
                 # Conditionalize on all indicated variables. I.e.,
                 # SUM(P(filteredY | Z=z) * P(Z=z)) for all z in Z.
-                accum = np.zeros((bins,))
-                conditionalizeOn = []
-                for given in condSpecs:
-                    conditionalizeOn.append(given)
-                totalDepth = len(conditionalizeOn)
-                if filtSpecs:
-                    totalDepth += len(filtSpecs)
-                #print('totalDepth = ', totalDepth)
-                p = self.reductionExponent(totalDepth)
-                #print('p = ', p)
-                #condFiltSpecs = self.getCondSpecs(conditionalizeOn, power=power, hierarchical=True, reductionExp=p)
-                #countRatio = float(self.N) / filtSample.N
-                allProbs = 0.0 # The fraction of the probability space that has been tested.
-
                 Dtarg = 1 # The target dim.
                 Dfilt = len(filtSpecs)  # Filterning Dom
                 Dcond = len(condSpecs)  # Conditionalize Dim
@@ -581,30 +848,38 @@ class ProbSpace:
                     minP_Filt = .8 * Nfilt
                     maxP_Filt = 1.2 * Nfilt
                     ss = self.SubSpace(filtSpecs, minPoints=minP_Filt, maxPoints=maxP_Filt, discSpecs=self.discSpecs, fixDistr=True)
+                    #print('ss.N, min, max = ', ss.N, minP_Filt, maxP_Filt)
                 else:
                     ss = self
-                Ntarg = self.N**(Dtarg/(Dcond + Dtarg)) # Number of points to return from final
+                Ntarg = ss.N**(Dtarg/(Dcond + Dtarg)) # Number of points to return from final
                 minP = .8 * Ntarg
                 maxP = 1.2 * Ntarg
-                condFiltSpecs = self.getCondSpecs(conditionalizeOn, power=power, hierarchical=False, reductionExp=p)
+                condFiltSpecs = self.getCondSpecs(condSpecs, power=power, effN=ss.N)
+                accum = np.zeros((bins,))
+                allProbs = 0.0 # The fraction of the probability space that has been tested.
+                allPoints = 0
                 for cf in condFiltSpecs:
                     # Create a new subspace filtered by both the bound and unbound conditions
                     # Note that progressive filtering will be used for the unbound conditions.
                     # probYgZ is P(Y | Z=z) e.g., P(Y | X=1, Z=z)
-                    #print('N, min, max = ', self.N, minPoints, maxPoints)
                     ss2 = ss.SubSpace(cf, minPoints=minP, maxPoints=maxP, discSpecs=self.discSpecs, fixDistr=True)
-                    #print('ss2.N = ', ss2.N)
+                    #print('ss2.N, min, max = ', ss2.N, minP, maxP)
+                    if ss2.N < 1:
+                        continue
+                    p#rint('ss2.N = ', ss2.N)
+
                     probYgZ = ss2.distr(rvName)
                     #probYgZ = filtSpace.distr(rvName, cf)
                     # Now we can compute probZ as ratio of the number of data points in the filtered distribution and the original
-                    probZ = ss2.N / ss.N
-                    #print('probZ = ', probZ, ', probYgZ/E() = ', probYgZ.E(), ', probYgZ.N = ', probYgZ.N, ', ss.N = ', ss.N, ', ss.query = ', ss.parentQuery, ', ss2.query = ', ss2.parentQuery)
+                    probZ = self.P(ss2.parentQuery)
+                    print('probZ = ', probZ, ', probYgZ.E() = ', probYgZ.E(), ', probYgZ.N = ', probYgZ.N, ', ss.N = ', ss.N, ', ss.query = ', ss.parentQuery, ', ss2.query = ', ss2.parentQuery)
                     if probZ == 0:
                         # Zero probability -- don't bother accumulating
                         continue
                     probs = probYgZ.ToHistogram() * probZ # Creates an array of probabilities
                     accum += probs
                     allProbs += probZ
+                    allPoints += ss2.N
                 accum = accum / allProbs
                 # Now we start with a pdf of the original variable to establish the ranges, and
                 # then replace the actual probabilities of each bin.  That way we maintain the
@@ -616,7 +891,7 @@ class ProbSpace:
                     newprob = accum[i]
                     newBin = pdfBin[:-1] + (newprob,)
                     outSpecs.append(newBin)
-                outPDF = PDF(ss2.N, outSpecs, isDiscrete = isDiscrete)
+                outPDF = PDF(allPoints, outSpecs, isDiscrete = isDiscrete)
         self.distrCache[cacheKey] = outPDF
         return outPDF
 
@@ -704,7 +979,7 @@ class ProbSpace:
         p = log(minPoints, self.N)**(1 / totalDepth)
         return p
 
-    def getCondSpecs(self, condVars, power=2, hierarchical=True, reductionExp=None):
+    def getCondSpecs(self, condSpecs, power, effN=None):
         """ Produce a set of conditional specifications for stochastic
             conditionalization, given
             a set of variables to conditionalize on, and a desired power level.
@@ -724,69 +999,56 @@ class ProbSpace:
             Where K is the number of conditional variables, and N is the total number
             of combinations = K**(2 * P + 1) for values of P < 100.
         """
+        if effN is None:
+            effN = self.N
+        delta = .3 / log(effN, 10)
+        #print('getCondSpecs: delta = ', delta, ', effN = ', effN)
+        condVars = [spec[0] for spec in condSpecs]
         rawCS = self.getCondSpecs2(condVars, power = power)
-        if reductionExp is None:
-            p = self.reductionExponent(len(condVars)) # The exponent of the number of data points for each level
-        else:
-            p = reductionExp
-        #print('p = ', p)
-        #print('rawCS = ', rawCS, ', power = ', power)
         outCS = []
-        rotation = 0
+        stats = {}
+        # Prepopulate stats for each variable (mean, std)
+        for var in condVars:
+            distr = self.distr(var)
+            mean = distr.E()
+            std = distr.stDev()
+            stats[var] = (mean, std)
+        # Scale and center the raw test points.
         for spec in rawCS:
-            # If hierarchical sampling, rotate the variables so that they take turns being
-            # the top variable.
-            if rotation > 0 and hierarchical:
-                spec = spec[rotation:] + spec[:rotation]
-            #print('spec = ', spec)
-            currPS = self
             outSpec = []
             # Adjust pseudo filters by the mean and std of the conditional
             for s in range(len(spec)):
                 varSpec = spec[s]
-                #print('varSpec = ', varSpec)
                 var = varSpec[0]
-                #print('var = ', var)
                 if self.isDiscrete(var):
                     outSpec.append(varSpec)
                 else:
+                    # Continuous.  Create small ranges based on delta
                     val = varSpec[1]
-                    distr = currPS.distr(var)
-                    mean = distr.E()
-                    std = distr.stDev()
-                    #print('mean, std = ', mean, std)
-                    varSpec = (var, mean + val * std)
+                    mean, std = stats[var]
+                    # Mean + val +/- delta
+                    varSpec = (var, (mean + val - delta) * std, (mean + val + delta) * std)
                     #print('varSpec = ', varSpec, ', val = ', val, ', mean, std = ', mean, std)
                     outSpec.append(varSpec)
-                # Use resulting conditional space of this variable for the sample
-                # of the next one.  That way, we sample using the mean and std
-                # of the variable in the conditioned space of the previous vars.
-                if s != len(spec) - 1 and hierarchical:
-                    dQuery = len(spec)
-                    nTarg = self.N**((s+1)/dQuery)
-                    minPoints = .8 * nTarg
-                    maxPoints = 1.2 * nTarg
-                    #print('N, minPoints, maxPoints = ', currPS.N, minPoints, maxPoints)
-                    currPS = currPS.SubSpace([varSpec], minPoints=minPoints, maxPoints=maxPoints)
-            # Only need to rotate if doing hierarchical
-            if hierarchical:
-                rotation = (rotation + 1) % len(condVars)
-            #print('outSpec = ', outSpec)
             outCS.append(outSpec)
         #print('outCS = ', outCS)
         return outCS
 
     def getCondSpecs2(self, condVars, power=2):
-        def getTestVals(self, rv):
+        """
+        Generate a set of unscaled test values.  These are in terms of standard deviations
+        from the mean.
+        """
+        def getTestVals(self, rvName, levelSpecs):
+            testVals = []
             isDiscrete = self.isDiscrete(rvName)
-            if isDiscrete or testPoints is None:
+            if isDiscrete or power >= 100:
                 # If is Discrete, return all values
-                testVals = self.getMidpoints(rv)
-                testVals = [testVal for testVal in testVals]
+                # If power >= 100, return all bins.
+                testVals = self.getMidpoints(rvName)
             else:
-                # If continuous, sample values at testPoint distances from the mean
-                testVals = []
-                for tp in testPoints:
+                # If continuous, sample values at various distances from the mean
+                for tp in levelSpecs:
                     if tp == 0:
                         # For 0, just use the mean
                         testVals.append(0)
@@ -795,35 +1057,30 @@ class ProbSpace:
                         testVals.append(-tp,)
                         testVals.append(tp,)
             return testVals
-        levelSpecs0 = [.5, .25, .75, 1, .25, .1, 1.5, 1.25, 1.75, 2.0]
-        maxLevel = 3 # Largest standard deviation to sample
-        if power <= 10:
-            levelSpecs = levelSpecs0
-        elif power < 100:
-            levelSpecs = list(np.arange(1/power, maxLevel + 1/power, 1/power))
+        if power == 0:
+            maxLevel = .5
+            levelSpecs = [0]
         else:
-            levelSpecs = None
-        if levelSpecs:
-            testPoints = [0] + levelSpecs[:power]
-        else:
-            # TestPoints None means test all values
-            testPoints = None
+            maxLevel = .5 + log(power, 10)
+            #print('maxLevel = ', maxLevel)
+            levelSpecs = [0] + list(np.arange(1/power*maxLevel, maxLevel + 1/power*maxLevel, 1/power*maxLevel))
+        #print('levelSpecs = ', levelSpecs)
 
         # Find values for each variable based on testPoints
         nVars = len(condVars)
         rvName = condVars[0]
         if nVars == 1:
             # Only one var to do.  Find the values.
-            vals = getTestVals(self, rvName)
+            vals = getTestVals(self, rvName, levelSpecs)
             return [[(rvName, val)] for val in vals]
         else:
             # We're not on the last var, so recurse and build up the total set
             accum = []
-            vals = getTestVals(self, rvName)
-            nextPower = power if power <= 1 else power -1
-            childVals = self.getCondSpecs2(condVars[1:], nextPower) # Recurse to get the child values
+            vals = getTestVals(self, rvName, levelSpecs)
+            childVals = self.getCondSpecs2(condVars[1:], power) # Recurse to get the child values
             for val in vals:
                 accum += [[(rvName, val)] + childVal for childVal in childVals]
+            #print('accum = ', accum)
             return accum
         # End of getCondSpecs
         
@@ -845,31 +1102,27 @@ class ProbSpace:
         #print('old = ', spec, ', new =', outSpec, ', delta = ', deltaAdjust)
         return outSpec
 
-    def dependence(self, rv1, rv2, givensSpec=[], power=None, raw=False):
+    def dependence(self, rv1, rv2, givenSpecs=[], power=None, raw=False):
         """ givens is [given1, given2, ... , givenN]
         """
         if power is None:
             power = self.power
-        if givensSpec is None:
-            givensSpec = []
-        if type(givensSpec) != type([]):
-            givensSpec = [givensSpec]
-        accum = 0.0
-        accumProb = 0.0
+        givenSpecs = self.normalizeSpecs(givenSpecs)
+        if DEBUG:
+            print('ProbSpace.dependence: dependence(' , rv1, ', ', rv2, '|', givenSpecs , ')')
         # Get all the combinations of rv1, rv2, and any givens
         # Depending on power, we test more combinations.  If level >= 100, we test all combos
         # For level = 0, we just test the mean.  For 1, we test the mean + 2 more values.
         # For level = 3, we test the mean + 6 more values.
 
         # Separate the givens into bound (e.g. B=1, 1 <= B < 2) and unbound (e.g., B) specifications.
-        totalDepth = len(givensSpec) + 1
-        p = self.reductionExponent(totalDepth)
-        #print('p =', p)
-        givensU, givensB = self.separateSpecs(givensSpec)
+        givensU, givensB = self.separateSpecs(givenSpecs)
         if not givensU:
             condFiltSpecs = [None]
         else:
-            condFiltSpecs = self.getCondSpecs(givensU, power, reductionExp=p)    
+            condFiltSpecs = self.getCondSpecs(givensU, power=power)
+        accum = 0.0
+        accumProb = 0.0
         prevGivens = None
         prevProb1 = None
         numTests = 0
@@ -878,34 +1131,38 @@ class ProbSpace:
             # givens is conditional on spec without rv2
             #print('spec = ', spec)
             if spec is None: # Unconditional Independence
-                minPoints = self.N**(p**len(givensB))
-                maxPoints = minPoints * 5
-                ss1 = self.SubSpace(givensB, minPoints=minPoints, maxPoints=maxPoints)
+                Dtarg = 2
+                if givensB:
+                    ss1 = self.getCondSpace(givensB, Dtarg=Dtarg)
+                else:
+                    ss1 = self
                 prob1 = ss1.distr(rv1)
             else:
                 givens = spec
                 if givens != prevGivens:
                     # Only recompute prob 1 when givensValues change
                     # Get a subsapce filtered by all givens, but not rv2
-                    minPoints = self.N**(p**(len(givensB)+len(givens)))
-                    maxPoints = minPoints * 5
-                    ss1 = self.SubSpace(givens + givensB, minPoints=minPoints, maxPoints=maxPoints)
+                    Dtarg = 2
+                    ss1 = self.getCondSpace(givens + givensB, Dtarg=Dtarg)
                     prob1 = ss1.distr(rv1)
                     prevProb1 = prob1
                     prevGivens = givens
                 else:
                     # Otherwise use the previously computed prob1
                     prob1 = prevProb1
-            if prob1.N == 0:
-                print('Empty distribution: ', spec)
+            if prob1.N <= 1:
+                #print('Empty distribution: ', spec)
                 continue
-            testSpecs = ss1.getCondSpecs([rv2], power)
+            #print('ss1.N = ', ss1.N)
+            testSpecs = ss1.getCondSpecs([(rv2,)], power)
             for testSpec in testSpecs:
                 # prob2 is the conditional subspace of everything but rv2
                 # conditioned on rv2
-                minPoints = ss1.N**(p)
-                maxPoints = minPoints * 5
-                ss2 = ss1.SubSpace(testSpec, minPoints=minPoints, maxPoints=maxPoints)
+                Dtarg = 1
+                #print('testSpec = ', testSpec)
+                ss2 = ss1.getCondSpace(testSpec, Dtarg=Dtarg)
+                if ss2.N == 0:
+                    continue
                 prob2 = ss2.distr(rv1)
                 if prob2.N == 0:
                     continue
@@ -948,7 +1205,7 @@ class ProbSpace:
         uSpecs = []
         bSpecs = []
         for spec in specs:
-            if type(spec) == type((0,)):
+            if type(spec) == type((0,)) and len(spec) > 1:
                 # It is a bound spec
                 bSpecs.append(spec)
             else:
@@ -958,7 +1215,7 @@ class ProbSpace:
 
 
 
-    def independence(self, rv1, rv2, givensSpec=None, power=None):
+    def independence(self, rv1, rv2, givenSpecs=None, power=None):
         """
             Calculate the independence between two variables, and an optional set of givens.
             This is a heuristic inversion
@@ -968,74 +1225,47 @@ class ProbSpace:
             givens are formatted the same as for prob(...).
             TO DO: Calibrate to an exact p-value.
         """
-        dep = self.dependence(rv1, rv2, givensSpec=givensSpec, power=power)
+        dep = self.dependence(rv1, rv2, givenSpecs=givenSpecs, power=power)
         ind = 1 - dep
         return ind
 
 
-    def isIndependent(self, rv1, rv2, givensSpec=None, power=None):
+    def isIndependent(self, rv1, rv2, givenSpecs=None, power=None):
         """ Determines if two variables are independent, optionally given a set of givens.
             Returns True if independent, otherwise False
         """
-        ind = self.independence(rv1, rv2, givensSpec = givensSpec, power = power)
+        ind = self.independence(rv1, rv2, givenSpecs = givenSpecs, power = power)
         # Use .5 (50% confidence as threshold.
         return ind > .5
-
-    # Unused
-    def jointValues(self, rvList):
-        """ Return a list of the joint distribution values for a set of variables.
-            I.e. [(rv1Val, rv2Val, ... , rvNVal)] for every combination of bin values.
-        """
-        nVars = len(rvList)
-        rvName = rvList[0]
-        vals = self.getMidpoints(rvName)
-        if nVars == 1:
-            return ([(val,) for val in vals])
-        else:
-            accum = []
-            childVals = self.jointValues(rvList[1:]) # Recurse to get the child values
-            for val in vals:
-                accum += [(val,) + childVal for childVal in childVals]
-            return accum
-
-    # Unused
-    def jointCondSpecs(self, rvList):
-        condSpecList = []
-        jointVals = self.jointValues(rvList)
-        for item in jointVals:
-            condSpecs = []
-            for i in range(len(rvList)):
-                rvName = rvList[i]
-                val = item[i]
-                spec = (rvName, val)
-                condSpecs.append(spec)
-            condSpecList.append(condSpecs)
-        return condSpecList
 
     def jointProb(self, varSpecs, givenSpecs=None):
         """ Return the joint probability given a set of variables and their
             values.  varSpecs is of the form (varName, varVal).  We want
             to find the probability of all of the named variables having
             the designated value.
-            Join Probability is calculated as e.g.:
-            - P(A, B, C) = P(A | B,C) * P(B | C) * P(C)
         """
+
         if givenSpecs is None:
             givenSpecs = []
-        accum = []
-        nSpecs = len(varSpecs)
-        for i in range(nSpecs):
-            spec = varSpecs[i]
-            if i == nSpecs - 1:
-                accum.append(self.prob(spec, givenSpecs))
-            else:
-                nextSpecs = varSpecs[i+1:]
-                accum.append(self.prob(spec, nextSpecs + givenSpecs))
-
-        # Return the product of the accumulated probabilities
-        allProbs = np.array(accum)
-        jointProb = float(np.prod(allProbs))
-        return jointProb
+        Dtarg = len(varSpecs) # The target dim.
+        Dcond = len(givenSpecs) # The conditional dimension
+        Dquery = Dtarg + Dcond # The query dimension
+        if Dcond > 0:
+            Ntarg = self.N**(Dtarg / Dquery)
+            minP = .8 * Ntarg
+            maxP = 1.2 * Ntarg
+            ss = self.SubSpace(givenSpecs, minPoints=minP, maxPoints=maxP)
+        else:
+            ss = self
+        Ntarg = ss.N**(.5)
+        minP = .8 * Ntarg
+        maxP = 1.2 * Ntarg
+        ss2 = ss.SubSpace(varSpecs, minP, maxP)
+        if ss2.N > 0:
+            jp = ss2.N / ss.N
+        else:
+            jp = 0
+        return jp
 
     def pdfToProbArray(self, pdf):
         vals = []
@@ -1093,13 +1323,25 @@ class ProbSpace:
         rho = num1 / (denom1**.5 * denom2**.5)
         return rho
 
-    def Predict(self, Y, X, useVars=None):
+    def Predict(self, Y, X, useVars=None, cMethod='d!'):
         """
-            Y is a single variable name.  X is a dataset.
+            Y is a single variable name.  X is a dataset
         """
-        dists = self.PredictDist(Y, X, useVars)
-        preds = [dist.E() for dist in dists]
-        return preds
+        if cMethod[0] != 'd':
+            xVars = list(X.keys())
+            nTests = len(X[xVars[0]])
+            results = []
+            for i in range(nTests):
+                conds = []
+                for var in xVars:
+                    conds.append((var, X[var][i]))
+                result = self.E(Y, conds, cMethod='j', smoothness=.25)
+                results.append(result)
+            return results
+        else:
+            dists = self.PredictDist(Y, X, useVars)
+            preds = [dist.E() for dist in dists]
+            return preds
 
     def Classify(self, Y, X, useVars=None):
         """
@@ -1114,6 +1356,8 @@ class ProbSpace:
         """
             Y is a single variable name.  X is a dataset.
         """
+        if DEBUG:
+            print('ProbSpace.PredictDist: Y, Xvars, useVars = ', Y, X.keys(), useVars)
         outPreds = []
         # Make sure Y is not in X
         if useVars is not None:
@@ -1156,8 +1400,8 @@ class ProbSpace:
             for var in vars:
                 val = X[var][i]
                 filts.append((var, val))
-            maxPoints = min([sqrt(self.N), 20])
-            fs = self.SubSpace(filts, minPoints=1, maxPoints=maxPoints)
+            maxPoints = min([sqrt(self.N), 200])
+            fs = self.SubSpace(filts, minPoints=10, maxPoints=maxPoints)
             #fs = self.SubSpace(filts)
             if DEBUG and fs.N > maxPoints and not targetIsDiscrete:
                 print('subspace.N = ', fs.N)

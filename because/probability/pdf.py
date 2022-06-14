@@ -10,7 +10,7 @@ RKHSmv = Rmv.RKHS
 
 
 epsilon = .001 # The maximum proability value considered to be zero
-minDisc = 30 # The minimum number of points to use discretization.
+minDisc = 0 # The minimum number of points to use discretization.
               # If we have less than this number, use RKHS to estimate.
 rmvCache = {} # Cache of rkhsMV by data and includevars
 

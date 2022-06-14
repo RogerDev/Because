@@ -9,13 +9,19 @@ import sys
 if '.' not in sys.path:
     sys.path.append('.')
 from because.probability import ProbSpace
-from because.synth import read_data
+from because.synth import gen_data
 import time
 
+power = 1
+dataPoints = 10000
+#cMethod = 'j'
+cMethod = 'd!'
+tries = 10
+
 def run(filename):
-    r = read_data.Reader(filename)
-    dat = r.read()
-    ps = ProbSpace(dat, density=1, power=1)
+    gen = gen_data.Gen(filename)
+    dat = gen.getDataset(dataPoints)
+    ps = ProbSpace(dat, density=1, power=power, cMethod = cMethod)
     start = time.time()
     print()
     print ('Testing probability module.')
@@ -166,12 +172,18 @@ def run(filename):
         b = testDat['B'][p]
         print('Classification(C) for A = ', a, ', B = ', b, ', = pred(C) = ', val, ' Exp:', a + b)    
     testDat = {'N':[.5, 1, 1.5, 2, 2.5, 3], 'B':[1,2,3,4,5,6]}
+    predDat = ps.Predict('N2', testDat, cMethod='j')
+    for p in range(len(predDat)):
+        val = predDat[p]
+        n = testDat['N'][p]
+        b = testDat['B'][p]
+        print('Prediction(N2) for N = ', n, ', B = ', b, ', = pred(C) = ', val, ' Exp:', n + 1)
     predDists = ps.PredictDist('N2', testDat)
     for p in range(len(predDists)):
         d = predDists[p]
         n = testDat['N'][p]
         b = testDat['B'][p]
-        print('Prediction(N2) for N = ', n, ', B = ', b, ', = pred(N2 (mean, std)) = ', d.E(), d.stDev(), ' Exp:', n + 1, ', 1')
+        print('PredDist(N2) for N = ', n, ', B = ', b, ', = pred(N2 (mean, std)) = ', d.E(), d.stDev(), ' Exp:', n + 1, ', 1')
     print()
     end = time.time()
     duration = end - start
@@ -180,10 +192,10 @@ def run(filename):
 if __name__ == '__main__':
     if '-h' in sys.argv:
         print('\nMain regression test for prob.py')
-        print('\nUsage: python because/probability/test/probTest.py')
+        print('\nUsage: python because/probability/test/probTest.py <dataoints>')
         print()
-        print('Note: before running generate data for SEM file:')
-        print('because/probability/test/models/probTestDat.py')
     else:
-        filename = "probability/test/models/probTestDat.csv"
+        filename = "probability/test/models/probTestDat.py"
+        if len(sys.argv) > 1:
+            dataPoints = int(sys.argv[1])
         run(filename)
