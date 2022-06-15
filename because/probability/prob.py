@@ -10,6 +10,7 @@ except:
 from because.probability.pdf import PDF
 from because.probability import uprob
 from because.probability.rkhs import rkhsMV
+from because.probability.rcot.RCoT import RCoT
 
 DEBUG = False
 
@@ -866,7 +867,7 @@ class ProbSpace:
                     #print('ss2.N, min, max = ', ss2.N, minP, maxP)
                     if ss2.N < 1:
                         continue
-                    p#rint('ss2.N = ', ss2.N)
+                    #print('ss2.N = ', ss2.N)
 
                     probYgZ = ss2.distr(rvName)
                     #probYgZ = filtSpace.distr(rvName, cf)
@@ -1102,12 +1103,25 @@ class ProbSpace:
         #print('old = ', spec, ', new =', outSpec, ', delta = ', deltaAdjust)
         return outSpec
 
-    def dependence(self, rv1, rv2, givenSpecs=[], power=None, raw=False):
+    def dependence(self, rv1, rv2, givenSpecs=[], power=None, raw=False, seed=None, num_f=100, num_f2=5, dMethod='prob'):
         """ givens is [given1, given2, ... , givenN]
         """
+        if dMethod == "rcot":
+            x = self.ds[rv1]
+            y = self.ds[rv2]
+            if givenSpecs == []:
+                (p, Sta) = RCoT(x, y, num_f=num_f, num_f2=num_f2, seed=seed)
+                #return 1-p[0]
+                return (1-p[0]) ** log(0.5, 0.99)
+            z = []
+            for rv in givenSpecs:
+                z.append(self.ds[rv])
+            (Cxy_z, Sta, p) = RCoT(x, y, z, num_f=num_f, num_f2=num_f2, seed=seed)
+            return (1-p[0]) ** log(0.5, 0.99)
+            #return 1 - p[0]
+
         if power is None:
             power = self.power
-        givenSpecs = self.normalizeSpecs(givenSpecs)
         if DEBUG:
             print('ProbSpace.dependence: dependence(' , rv1, ', ', rv2, '|', givenSpecs , ')')
         # Get all the combinations of rv1, rv2, and any givens
@@ -1215,7 +1229,7 @@ class ProbSpace:
 
 
 
-    def independence(self, rv1, rv2, givenSpecs=None, power=None):
+    def independence(self, rv1, rv2, givenSpecs=None, power=None, seed=None, num_f=100, num_f2=5, dMethod='prob'):
         """
             Calculate the independence between two variables, and an optional set of givens.
             This is a heuristic inversion
@@ -1225,7 +1239,7 @@ class ProbSpace:
             givens are formatted the same as for prob(...).
             TO DO: Calibrate to an exact p-value.
         """
-        dep = self.dependence(rv1, rv2, givenSpecs=givenSpecs, power=power)
+        dep = self.dependence(rv1, rv2, givenSpecs=givenSpecs, power=power, seed=seed, num_f=num_f, num_f2=num_f2, dMethod=dMethod)
         ind = 1 - dep
         return ind
 
