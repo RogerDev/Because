@@ -1104,7 +1104,15 @@ class ProbSpace:
         return outSpec
 
     def dependence(self, rv1, rv2, givenSpecs=[], power=None, raw=False, seed=None, num_f=100, num_f2=5, dMethod='prob'):
-        """ givens is [given1, given2, ... , givenN]
+        """
+        givens is [given1, given2, ... , givenN]
+
+        This function include two different method 'prob' and 'rcot' to test dependence.
+        Parameter power is for 'prob' method.
+        Parameter seed is for 'rcot' method to determine the random seed. The same seed will return same results
+        on the same dataset.
+        Parameter num_f is the number of features for conditioning set, num_f2 is the number of features for
+        non-conditioning set in 'rcot' method.
         """
         if dMethod == "rcot":
             x = self.ds[rv1]
@@ -1112,6 +1120,7 @@ class ProbSpace:
             if givenSpecs == []:
                 (p, Sta) = RCoT(x, y, num_f=num_f, num_f2=num_f2, seed=seed)
                 #return 1-p[0]
+                # Use 0.99 as threshold to determine whether a pair of variables are dependent
                 return (1-p[0]) ** log(0.5, 0.99)
             z = []
             for rv in givenSpecs:
@@ -1239,16 +1248,18 @@ class ProbSpace:
             givens are formatted the same as for prob(...).
             TO DO: Calibrate to an exact p-value.
         """
-        dep = self.dependence(rv1, rv2, givenSpecs=givenSpecs, power=power, seed=seed, num_f=num_f, num_f2=num_f2, dMethod=dMethod)
+        dep = self.dependence(rv1, rv2, givenSpecs=givenSpecs, power=power, seed=seed, num_f=num_f, num_f2=num_f2,
+                              dMethod=dMethod)
         ind = 1 - dep
         return ind
 
 
-    def isIndependent(self, rv1, rv2, givenSpecs=None, power=None):
+    def isIndependent(self, rv1, rv2, givenSpecs=None, power=None, seed=None, num_f=100, num_f2=5, dMethod='prob'):
         """ Determines if two variables are independent, optionally given a set of givens.
             Returns True if independent, otherwise False
         """
-        ind = self.independence(rv1, rv2, givenSpecs = givenSpecs, power = power)
+        ind = self.independence(rv1, rv2, givenSpecs = givenSpecs, power = power, seed=seed, num_f=num_f, num_f2=num_f2,
+                              dMethod=dMethod)
         # Use .5 (50% confidence as threshold.
         return ind > .5
 
