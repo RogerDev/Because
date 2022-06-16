@@ -12,12 +12,17 @@ from because.probability import prob
 from because.probability.standardiz import standardize
 import time
 
-METHOD = 'prob'
+#METHOD = 'prob'
 #METHOD = 'fcit'
+METHOD = 'rcot'
+#r1 = 10
+num_f = 100
+num_f2 = 20
+seed = None
 POWER = 1
 print('power = ', POWER)
 args = sys.argv
-test = 'probability/test/models/indCalibrationDat.csv'
+test = 'C:/Users/91952/Because/because/probability/test/models/indCalibrationDat.csv'
 
 r = read_data.Reader(test)
 dat = r.read()
@@ -28,7 +33,10 @@ for var in vars:
 ps = ProbSpace(dat, power = POWER)
 
 # List a variety of independent relationships
-indeps = [('L1', 'L2'),
+indeps = [  # totally independence
+            ('L1', 'L2'),
+            ('L1', 'L2', ['A']),
+            ('L1', 'L2', ['A', 'B']),
             ('L2', 'L3'),
             ('L1', 'L3'),
             ('E1', 'E2'),
@@ -36,18 +44,22 @@ indeps = [('L1', 'L2'),
             ('L4', 'L5'),
             ('L5', 'L6'),
             ('L4', 'N3'),
-            ('B', 'D', ['A']),
-            ('A', 'C', ['B', 'D']),
             ('C', 'E2'),
+            # common cause
             ('L6', 'L7', ['L3']),
             ('L4', 'L6', ['L3']),
             ('L8', 'L9', ['L1']),
+            # complex causal and v-structure
+            ('B', 'D', ['A']),
+            ('A', 'C', ['B', 'D']),
+            # v-structure and common cause
             ('M1', 'E2'),
             ('M1', 'E2'),
             ]
 
 # List a varieety of dependent relationships
-deps = [('L3', 'L4'),
+deps = [
+        ('L3', 'L4'),
         ('L5', 'L2'),
         ('L6', 'L3'),
         ('L6', 'L7'),
@@ -65,6 +77,7 @@ deps = [('L3', 'L4'),
         ('L8', 'L9'),
         ('N1', 'N2', ['N3']),
         ('N3', 'E1', ['M1']),
+        ('M1', 'E2', ['E3'])
         ]
 print('Testing: ', test)
 start = time.time()
@@ -81,6 +94,7 @@ cumDep = 0.0
 print()
 print('Testing expected independents:')
 for ind in indeps:
+    start2 = time.time()
     if len(ind) == 2:
         x, y = ind
         z = []
@@ -91,16 +105,20 @@ for ind in indeps:
     #xD = [dat[x]]
     #yD = [dat[y]]
     #zD = [dat[zvar] for zvar in z]
-    pval = independence.test(ps, [x], [y], z, method = METHOD, power = POWER)
+    pval = independence.test(ps, [x], [y], z, method = METHOD, power = POWER, seed=seed, num_f=num_f, num_f2=num_f2)
     #pval = ps.independence(x, y, z)
     if pval < minIndep:
         minIndep = pval
     print('dependence', ind, '= ', 1-pval)
+    end = time.time()
+    duration = end - start2
+    print('Test Time = ', round(duration))
 
 print()
 print('Testing expected dependents:')
 print()
 for dep in deps:
+    start2 = time.time()
     if len(dep) == 2:
         x, y = dep
         z = []
@@ -111,13 +129,16 @@ for dep in deps:
     #xD = [dat[x]]
     #yD = [dat[y]]
     #zD = [dat[zvar] for zvar in z]
-    pval = independence.test(ps, [x], [y], z, method = METHOD, power = POWER)
+    pval = independence.test(ps, [x], [y], z, method = METHOD, power = POWER, seed=seed, num_f=num_f, num_f2=num_f2)
     #pval = ps.independence(x, y, z)
     if pval > maxDep:
         maxDep = pval
     if pval < minDep:
         minDep = pval
     print('dependence', dep, ' = ', 1-pval)
+    end = time.time()
+    duration = end - start2
+    print('Test Time = ', round(duration))
 print()
 
 print('Maximum dependence for expected independents = ', 1-minIndep)
