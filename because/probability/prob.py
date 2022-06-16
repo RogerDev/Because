@@ -1131,6 +1131,7 @@ class ProbSpace:
 
         if power is None:
             power = self.power
+        givenSpecs = self.normalizeSpecs(givenSpecs)
         if DEBUG:
             print('ProbSpace.dependence: dependence(' , rv1, ', ', rv2, '|', givenSpecs , ')')
         # Get all the combinations of rv1, rv2, and any givens
