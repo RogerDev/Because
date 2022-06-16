@@ -7,7 +7,6 @@ try:
     from because.probability import probCharts
 except:
     pass
-from because.probability import probCharts
 from because.probability.pdf import PDF
 from because.probability import uprob
 from because.probability.rkhs import rkhsMV
