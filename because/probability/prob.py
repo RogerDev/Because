@@ -11,6 +11,7 @@ from because.probability import probCharts
 from because.probability.pdf import PDF
 from because.probability import uprob
 from because.probability.rkhs import rkhsMV
+from because.probability.rcot.RCoT import RCoT
 
 DEBUG = False
 
@@ -848,7 +849,7 @@ class ProbSpace:
                     #print('ss2.N, min, max = ', ss2.N, minP, maxP)
                     if ss2.N < 1:
                         continue
-                    p#rint('ss2.N = ', ss2.N)
+                    #print('ss2.N = ', ss2.N)
 
                     probYgZ = ss2.distr(rvName)
                     #probYgZ = filtSpace.distr(rvName, cf)
@@ -1086,9 +1087,32 @@ class ProbSpace:
         #print('old = ', spec, ', new =', outSpec, ', delta = ', deltaAdjust)
         return outSpec
 
-    def dependence(self, rv1, rv2, givenSpecs=[], power=None, raw=False):
-        """ givens is [given1, given2, ... , givenN]
+    def dependence(self, rv1, rv2, givenSpecs=[], power=None, raw=False, seed=None, num_f=100, num_f2=5, dMethod='prob'):
         """
+        givens is [given1, given2, ... , givenN]
+
+        This function include two different method 'prob' and 'rcot' to test dependence.
+        Parameter power is for 'prob' method.
+        Parameter seed is for 'rcot' method to determine the random seed. The same seed will return same results
+        on the same dataset.
+        Parameter num_f is the number of features for conditioning set, num_f2 is the number of features for
+        non-conditioning set in 'rcot' method.
+        """
+        if dMethod == "rcot":
+            x = self.ds[rv1]
+            y = self.ds[rv2]
+            if givenSpecs == []:
+                (p, Sta) = RCoT(x, y, num_f=num_f, num_f2=num_f2, seed=seed)
+                #return 1-p[0]
+                # Use 0.99 as threshold to determine whether a pair of variables are dependent
+                return (1-p[0]) ** log(0.5, 0.99)
+            z = []
+            for rv in givenSpecs:
+                z.append(self.ds[rv])
+            (Cxy_z, Sta, p) = RCoT(x, y, z, num_f=num_f, num_f2=num_f2, seed=seed)
+            return (1-p[0]) ** log(0.5, 0.99)
+            #return 1 - p[0]
+
         if power is None:
             power = self.power
         givenSpecs = self.normalizeSpecs(givenSpecs)
@@ -1199,7 +1223,7 @@ class ProbSpace:
 
 
 
-    def independence(self, rv1, rv2, givenSpecs=None, power=None):
+    def independence(self, rv1, rv2, givenSpecs=None, power=None, seed=None, num_f=100, num_f2=5, dMethod='prob'):
         """
             Calculate the independence between two variables, and an optional set of givens.
             This is a heuristic inversion
@@ -1209,16 +1233,18 @@ class ProbSpace:
             givens are formatted the same as for prob(...).
             TO DO: Calibrate to an exact p-value.
         """
-        dep = self.dependence(rv1, rv2, givenSpecs=givenSpecs, power=power)
+        dep = self.dependence(rv1, rv2, givenSpecs=givenSpecs, power=power, seed=seed, num_f=num_f, num_f2=num_f2,
+                              dMethod=dMethod)
         ind = 1 - dep
         return ind
 
 
-    def isIndependent(self, rv1, rv2, givenSpecs=None, power=None):
+    def isIndependent(self, rv1, rv2, givenSpecs=None, power=None, seed=None, num_f=100, num_f2=5, dMethod='prob'):
         """ Determines if two variables are independent, optionally given a set of givens.
             Returns True if independent, otherwise False
         """
-        ind = self.independence(rv1, rv2, givenSpecs = givenSpecs, power = power)
+        ind = self.independence(rv1, rv2, givenSpecs = givenSpecs, power = power, seed=seed, num_f=num_f, num_f2=num_f2,
+                              dMethod=dMethod)
         # Use .5 (50% confidence as threshold.
         return ind > .5
 

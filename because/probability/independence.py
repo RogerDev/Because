@@ -59,8 +59,14 @@ def testProb(ps, X, Y, Z=[], power=2):
     ind = ps.independence(X, Y, Z, power=power)
     return ind
 
+def testRCoT(ps, X, Y, Z=[], seed=None, num_f=100, num_f2=5):
+    X = X[0]
+    Y = Y[0]
+    #print('ps, X, Y, Z = ', ps, X, Y, Z)
+    ind = ps.independence(X, Y, Z, dMethod='rcot', seed=seed, num_f=num_f, num_f2=num_f2)
+    return ind
 
-def test(ps, X, Y, Z=[], method=None, power=1):
+def test(ps, X, Y, Z=[], method=None, power=1, seed=None, num_f=100, num_f2=5):
     # Valid values for method are: None(default), 'prob', 'fcit', 'sdcit'
     if method is None:
         method = 'prob'
@@ -70,6 +76,8 @@ def test(ps, X, Y, Z=[], method=None, power=1):
         p_val = testSDCIT(ps, X, Y, Z)
     elif method == 'prob':
         p_val = testProb(ps, X, Y, Z, power = power)
+    elif method == 'rcot':
+        p_val = testRCoT(ps, X, Y, Z, seed=seed, num_f=num_f, num_f2=num_f2)
     else:
         print('independence.test:  method = ', method, 'is not supported.')
     return p_val
