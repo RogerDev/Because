@@ -23,10 +23,9 @@ class RKHS:
         self.s = s # Smoothness factor
         if includeVars is None:
             self.varNames = list(data.keys())
-            self.D = len(self.varNames)
         else:
             self.varNames = includeVars
-            self.D = len(self.varNames)
+        self.D = len(self.varNames)
         self.N = len(data[self.varNames[0]])
         # X holds our data samples, reorganized as an array [D x N]
         self.X = []
@@ -68,7 +67,8 @@ class RKHS:
         #   S - the data specific smoothness (optionally) provided
         #           by the user
         # We         
-        scale = (.5 * s * self.N**(-1/5))**(1/self.D)
+        scale = (.5**(1/self.D) * s * self.N**(-1/5))
+        #print('rkhsMV: scale = ', scale)
         #scale = (.5 * s * self.N**(-1/6))
         cS = np.zeros(shape=c.shape)
         #print('c = ')

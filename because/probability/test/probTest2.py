@@ -8,15 +8,16 @@ if '.' not in sys.path:
 from because.probability import ProbSpace
 from because.synth import read_data
 from because.synth import gen_data
+import numpy as np
 import time
 
 power = 2
 dataPoints = 10000
 #cMethod = 'j'
 #cMethod = 'd!'
-cMethod = 'd!'
-tries = 1
-smoothness=.25
+cMethod = 'd'
+tries = 100
+smoothness=1
 
 def run(filename):
     gen = gen_data.Gen(filename)
@@ -28,6 +29,7 @@ def run(filename):
 
     def condit():
         print('Testing Conditionalization:')
+        allRuns = []
         cumAce = 0.0
         maxAce = -9999999
         minAce = 9999999
@@ -53,12 +55,15 @@ def run(filename):
             print('E( IVC | IVA = lower, IVB)', ivcGlower)
             ace = (ivcGupper - ivcGlower) / diff
             print('ACE(A,C) = ', ace, ' Exp: ~ 0')
+            print('i = ', i)
             cumAce += ace
+            allRuns.append(ace)
             minAce = min([minAce, ace])
             maxAce = max([maxAce, ace])
             print()
         print()
-        print('ACE(avg, min, max, range) = ', cumAce/tries, minAce, maxAce, maxAce - minAce)
+        print('cMethod = ', cMethod, ', tries = ', tries, ', N = ', dataPoints)
+        print('ACE(avg, min, max, std) = ', cumAce/tries, minAce, maxAce, np.std(allRuns))
         print()
 
     def depend():
@@ -79,7 +84,7 @@ def run(filename):
         print('Testing Bayesian Relationships:')
 
     condit()
-    depend()
+    #depend()
     print()
     end = time.time()
     duration = end - start
@@ -93,5 +98,5 @@ if __name__ == '__main__':
     else:
         if len(sys.argv) >= 2:
             dataPoints = int(sys.argv[1])
-        filename = "probability/test/models/probTestDat.py"
+        filename = "probability/test/models/probTestDat2.py"
         run(filename)

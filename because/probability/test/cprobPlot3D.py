@@ -29,7 +29,7 @@ numPts = 30 # How many eval points for each conditional
  
 # Arg format is  <datSize>
 dims = 3
-smoothness = 1
+smoothness = .8
 cumulative = False
 if len(sys.argv) > 1:
     datSize = int(sys.argv[1])
@@ -166,7 +166,7 @@ for i in range(tries):
             val = t[c]
             spec = (condVar, val)
             condspec.append(spec)
-        y_x = prob2.E(target, condspec, smoothness=.25)
+        y_x = prob2.E(target, condspec, smoothness=smoothness)
 
         jp_est.append(y_x)
         xt2.append(t[0])
@@ -182,7 +182,7 @@ for i in range(tries):
             val = t[c]
             spec = (condVar, val)
             condspec.append(spec)
-        y_x = prob3.E(target, condspec, smoothness=.25)
+        y_x = prob3.E(target, condspec, smoothness=smoothness)
 
         up_est.append(y_x)
         xt4.append(t[0])
@@ -303,7 +303,7 @@ ax.plot_trisurf(x, y, z, cmap = my_cmap)
 ax.set_xlabel('X', fontweight='bold')
 ax.set_ylabel('Y', fontweight='bold')
 ax.set_zlabel('E(Z|X,Y)', fontweight='bold')
-ax.set(title = "J-Prob  (R2 = " + str(round(jp_avg,2)) + ")")
+ax.set(title = "J-Prob  (R2 = " + str(round(jp_avg,3)) + ")")
 ax.view_init(20, -165)
 
 # D-Prob
@@ -315,7 +315,7 @@ ax.plot_trisurf(x, y, z, cmap = my_cmap)
 ax.set_xlabel('X', fontweight='bold')
 ax.set_ylabel('Y', fontweight='bold')
 ax.set_zlabel('E(Z|X,Y)', fontweight='bold')
-ax.set(title = "D-Prob (R2 = " + str(round(dp_avg,2)) + ")")
+ax.set(title = "D-Prob (R2 = " + str(round(dp_avg,3)) + ")")
 ax.view_init(20, -165)
 
 # U-Prob
@@ -327,7 +327,7 @@ ax.plot_trisurf(x, y, z, cmap = my_cmap)
 ax.set_xlabel('X', fontweight='bold')
 ax.set_ylabel('Y', fontweight='bold')
 ax.set_zlabel('E(Z|X,Y)', fontweight='bold')
-ax.set(title = "U-Prob (R2 = " + str(round(up_avg,2)) + ")")
+ax.set(title = "U-Prob (R2 = " + str(round(up_avg,3)) + ")")
 ax.view_init(20, -165)
 
 plt.show()

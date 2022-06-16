@@ -24,11 +24,11 @@ model =    ['B',
 # Structural Equation Model for data generation
 varEquations = [
                 'B = logistic(-2,1) if choice([0,1]) else logistic(3,.75)',
-                'C = normal(0, 2)',
+                'C = normal(1,3) if choice([0,1]) else abs(normal(-1,1))',
 			    #'A = math.tanh(B) + math.sin(B)  + logistic(0,.3)',
 			    #'A = (math.tanh(B) if choice([0,1]) else math.sin(B))  + logistic(0,.3)',
                 #'A = math.tanh(B) + logistic(0, .3)',
-                'A = tanh(B) + math.sin(C) + logistic(0,.3)',
+                'A = tanh(B) + math.sin(C*2) + logistic(0,.3)',
 				#'A = -3 * B + 2 * C',
                 #'A = B + logistic(0,.3)',
 			    #'C =  B + normal(0,2)',

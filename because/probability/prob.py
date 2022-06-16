@@ -7,6 +7,7 @@ try:
     from because.probability import probCharts
 except:
     pass
+from because.probability import probCharts
 from because.probability.pdf import PDF
 from because.probability import uprob
 from because.probability.rkhs import rkhsMV
@@ -353,14 +354,16 @@ class ProbSpace:
             else:
                 # We're in range.  Set newDelta to 0 to exit loop
                 newDelta = 0
-            if newDelta == 0 or newDelta > maxDelta:
+            if newDelta > maxDelta:
+                newDelta = maxDelta
+            if newDelta == 0 or delta >= maxDelta:
                 # If we're in range or if we've exceeded maxDelta, break out of loop.
                 break 
             else:
                 # Continue in loop with a new delta.
                 delta = newDelta
         if DEBUG and progressive:
-            print('attempt = ', attempt, ', delta = ', delta, ', remaining = ', remaining, ', minPoints, maxPoints = ', minPoints, maxPoints)
+            print('attempt = ', attempt, ', delta = ', delta, ', maxDelta = ', maxDelta, ', remaining = ', remaining, ', minPoints, maxPoints = ', minPoints, maxPoints)
             #print('finalQuery = ', filtSpec2, ', parentProb = ', remaining/self.N, ', parentN = ', self.N)
             pass
         # Remove all the non included rows
@@ -465,11 +468,11 @@ class ProbSpace:
             # Unconditional Expectation
             indx = self.fieldIndex[target]
             dat = self.aData[indx]
-            #print('len(dat) = ', len(dat))
             if len(dat) == 0:
                 # No data.  We can't know the expected value.  Return None.
                 result = 0
             else:
+                # For all methods, this is the best unconditional expectation.
                 result = np.mean(self.aData[indx])
         else:
             if cMethod[0] == 'd':  # d or d!
@@ -482,6 +485,8 @@ class ProbSpace:
                 #print('***** MV')
                 result = self.Emv(target, givenSpecs, power, smoothness=smoothness)
         self.expCache[cacheKey] = result
+        if DEBUG:
+            print('ProbSpace.E: E(' , targetSpecs, '|', givenSpecs , '), Result = ', result)
         return result
 
     def Edisc(self, target, givenSpecs, power):
@@ -489,23 +494,16 @@ class ProbSpace:
         condSpecs, filtSpecs = self.separateSpecs(givenSpecs)
         if not condSpecs:
             # Straight (bound) conditioning
-            Dtarg = len(condSpecs) + 1
+            Dtarg = 1
             ss = self.getCondSpace(filtSpecs)
             result = ss.E(target)
         else:
             # Conditionalization and possibly conditioning as well.
             # Conditionalize on all indicated variables. I.e.,
             # SUM(P(filteredY | Z=z) * P(Z=z)) for all z in Z.
-            Dtarg = 1 # The target dim.
-            Dfilt = len(filtSpecs)  # Filterning Dom
-            Dcond = len(condSpecs)  # Conditionalize Dim
-            Dquery = Dtarg + Dfilt + Dcond # Query Dim
-            Nfilt = self.N**((Dtarg + Dcond)/Dquery) # Number of points to return from filter
             # First, we filter on the bound conditions (if any), then conditionalize on the reduced set
             if filtSpecs:
-                minP_Filt = .8 * Nfilt
-                maxP_Filt = 1.2 * Nfilt
-                ss = self.SubSpace(filtSpecs, minPoints=minP_Filt, maxPoints=maxP_Filt)
+                 ss = self.getCondSpace(filtSpecs, Dtarg = len(condSpecs) + 1)
                 #print('ss.N, min, max = ', ss.N, minP_Filt, maxP_Filt)
             else:
                 ss = self
@@ -537,7 +535,6 @@ class ProbSpace:
 
         if not condSpecs:
             # Straight (bound) conditioning
-
             filtVars = [filtSpec[0] for filtSpec in filtSpecs]
             filtVals = []
             for filtSpec in filtSpecs:
@@ -568,13 +565,6 @@ class ProbSpace:
             else:
                 R = rkhsMV.RKHS(self.ds, includeVars=condVars, s=smoothness)
                 self.rkhsCache[cacheKey] = R
-            condVars2 = [spec[0] for spec in condFiltSpecs[0]]
-            cacheKey = (tuple(condVars2), smoothness)
-            if cacheKey in self.rkhsCache.keys():
-                R2 = self.rkhsCache[cacheKey]
-            else:
-                R2 = rkhsMV.RKHS(self.ds, includeVars=condVars2, s=smoothness)
-                self.rkhsCache[cacheKey] = R2
             for cf in condFiltSpecs:
                 specs = filtSpecs + cf
                 condVals = []
@@ -586,8 +576,6 @@ class ProbSpace:
                 exp = R.condE(target, condVals)
                 if exp is None:
                     continue
-                condVals2 = condVals[len(filtSpecs):]
-                #probZ = R2.P(condVals2)
                 probZ = self.P(cf)
                 #print('probZ = ', probZ, ', exp = ', exp, condVals)
                 if probZ == 0:
@@ -610,6 +598,7 @@ class ProbSpace:
                 ss = self.getCondSpace([filt], Dtarg=len(filtSpecs)+1)
             else:
                 ss = self
+            #print('ss.N = ', ss.N)
             filtVars = [filtSpec[0] for filtSpec in filtSpecs]
             filtVals = []
             for filtSpec in filtSpecs:
@@ -643,14 +632,6 @@ class ProbSpace:
             else:
                 R = rkhsMV.RKHS(ss.ds, includeVars=condVars, s=smoothness)
                 ss.rkhsCache[cacheKey] = R
-            condVars2 = [spec[0] for spec in condFiltSpecs[0]]
-            cacheKey = (tuple(condVars2), smoothness)
-            if cacheKey in self.rkhsCache.keys():
-                R2 = self.rkhsCache[cacheKey]
-            else:
-                R2 = rkhsMV.RKHS(ss.ds, includeVars=condVars2, s=smoothness)
-                self.rkhsCache[cacheKey] = R2
-            
             for cf in condFiltSpecs:
                 specs = cf
                 condVals = []
@@ -661,10 +642,9 @@ class ProbSpace:
                         condVals.append((spec[1] + spec[2]) / 2.0)
                 exp = R.condE(target, condVals)
                 if exp is None:
+                    # No points to evaluate.  Can't determine expectation.
                     continue
-                condVals2 = condVals
-                probZ = R2.P(condVals2)
-                #probZ = self.P(cf)
+                probZ = self.P(cf)
                 #print('probZ = ', probZ, ', exp = ', exp, condVals)
                 if probZ == 0:
                     # Zero probability -- don't bother accumulating
@@ -743,6 +723,8 @@ class ProbSpace:
         else:
             result = 0
         self.probCache[cacheKey] = result
+        if DEBUG:
+            print('ProbSpace.P: P(' , targetSpecs, '|', givenSpecs , ')', ', result = ', result)
         return result
 
     P = prob
@@ -1002,6 +984,8 @@ class ProbSpace:
         if effN is None:
             effN = self.N
         delta = .3 / log(effN, 10)
+        if DEBUG:
+            print('ProbSpace.getCondSpecs: delta = ', delta, ', effN = ', effN)
         #print('getCondSpecs: delta = ', delta, ', effN = ', effN)
         condVars = [spec[0] for spec in condSpecs]
         rawCS = self.getCondSpecs2(condVars, power = power)
@@ -1027,7 +1011,7 @@ class ProbSpace:
                     val = varSpec[1]
                     mean, std = stats[var]
                     # Mean + val +/- delta
-                    varSpec = (var, (mean + val - delta) * std, (mean + val + delta) * std)
+                    varSpec = (var, mean + (val - delta) * std, mean + (val + delta) * std)
                     #print('varSpec = ', varSpec, ', val = ', val, ', mean, std = ', mean, std)
                     outSpec.append(varSpec)
             outCS.append(outSpec)
