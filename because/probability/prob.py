@@ -425,6 +425,18 @@ class ProbSpace:
                 return False
         return True
 
+    def specsAreContinuous(self, inSpecs):
+        """
+        Returns true if all of the variables in inSpecs are continuous
+        (i.e. not discrete).  inSpecs should have been previously 
+        normalized via normalizeSpecs().
+        """
+        for spec in inSpecs:
+            var = spec[0]
+            if self.isDiscrete(var):
+                return False
+        return True
+
     def getCondSpace(self, givenSpecs, Dtarg=1):
         """
         Get a new ProbSpace filtered by the bound givenSpecs.  This is
@@ -446,9 +458,22 @@ class ProbSpace:
             a convenience function equivalent to:
                 distr(target, givensSpec).E()
 
-            targetSpecs is a single variable name.
-            givenSpecs is a conditional specification (see distr below
-            for format)
+            - targetSpecs is a single variable name.
+            - givenSpecs is a conditional specification (see distr below
+                for format)
+            -cMethod provides alternate methods for computing conditional expectations, overriding the
+                class level selection:
+                - D-Prob ('d' or 'd!') -- Discretization method.  This is the fastest and most flexible.
+                - J-Prob ('j') -- Multivariate Kernel based modeling of joint probability.  This is the most
+                                    accurate when dimensionality is high or data is scarce.  Continuous data
+                                    only.
+                - U-Prob ('u') -- Hybrid of D-Prob and J-Prob.  This is generally more accurate than D-Prob
+                                    but not as accurate as J-Prob when dimensionality is high or data is scarce.
+                                    Performance is comparable to D-Prob. Continuous data only.
+            - smoothness (range: (0, 2]) -- Applies only to J-Prob or U-Prob. Determines the smoothness of the
+                                    kernel used.  Lower values can be used to increase precision for complex
+                                    distributions with sufficient data.  Higher values provide a smoother
+                                    result with less variance.  Default 1.0.
         """
         if power is None:
             power = self.power
@@ -475,15 +500,19 @@ class ProbSpace:
                 # For all methods, this is the best unconditional expectation.
                 result = np.mean(self.aData[indx])
         else:
+            if self.isDiscrete(target) or not self.specsAreContinuous(givenSpecs):
+                # If the target is discrete or any of the givens are discrete, we will
+                # need to use D-Prob.
+                cMethod = 'd'
             if cMethod[0] == 'd':  # d or d!
-                #print('***** Discrete')
+                #print('***** Discrete -- D-Prob')
                 result = self.Edisc(target, givenSpecs, power)
             elif cMethod == 'u':  #uprob
-                #print('***** Uprob')
+                #print('***** U-Prob')
                 result = self.Eup(target, givenSpecs, power, smoothness=smoothness)
             else:
-                #print('***** MV')
-                result = self.Emv(target, givenSpecs, power, smoothness=smoothness)
+                #print('***** J-Prob')
+                result = self.Ejp(target, givenSpecs, power, smoothness=smoothness)
         self.expCache[cacheKey] = result
         if DEBUG:
             print('ProbSpace.E: E(' , targetSpecs, '|', givenSpecs , '), Result = ', result)
@@ -529,7 +558,7 @@ class ProbSpace:
             result = accum / allProbs
         return result
 
-    def Emv(self, target, givenSpecs, power, smoothness=1.0):
+    def Ejp(self, target, givenSpecs, power, smoothness=1.0):
         # Conditional Expectation
         condSpecs, filtSpecs = self.separateSpecs(givenSpecs)
 
@@ -598,6 +627,8 @@ class ProbSpace:
                 ss = self.getCondSpace([filt], Dtarg=len(filtSpecs)+1)
             else:
                 ss = self
+            if ss.N < 2:
+                return None
             #print('ss.N = ', ss.N)
             filtVars = [filtSpec[0] for filtSpec in filtSpecs]
             filtVals = []
@@ -620,6 +651,8 @@ class ProbSpace:
             # SUM(P(filteredY | Z=z) * P(Z=z)) for all z in Z
             Dtarg = len(condSpecs) + 1
             ss = self.getCondSpace(filtSpecs, Dtarg=Dtarg)
+            if ss.N < 2:
+                return None
             #print('ss.N = ', ss.N)
             condFiltSpecs = self.getCondSpecs(condSpecs, power=power)
             accum = 0.0
@@ -712,7 +745,7 @@ class ProbSpace:
         if givenSpecs:
             # We have conditionals
             assert self.specsAreBound(givenSpecs), 'ProbSpace.P: givens must be bound (i.e. include a value or value range). ' + \
-                                                    'Conditionalization not supported  Got ' + str(targetSpecs)
+                                                    'Conditionalization not supported.  Got ' + str(targetSpecs)
             ss = self.getCondSpace(givenSpecs, Dtarg=len(targetSpecs))
         else:
             # Marginal probability
@@ -1151,6 +1184,8 @@ class ProbSpace:
                     # Get a subsapce filtered by all givens, but not rv2
                     Dtarg = 2
                     ss1 = self.getCondSpace(givens + givensB, Dtarg=Dtarg)
+                    if ss1.N == 0:
+                        continue
                     prob1 = ss1.distr(rv1)
                     prevProb1 = prob1
                     prevGivens = givens
