@@ -29,7 +29,11 @@ def rep(x,y):
 def choose(n,kvec):
     ans = []
     for k in kvec:
-        ans.append(math.comb(n,k))
+        try:
+            comb = math.comb(n, k)
+        except AttributeError:
+            comb = int(math.factorial(n) / (math.factorial(k) * math.factorial(n-k))) if n >= k else 0
+        ans.append(comb)
     return np.array(ans)
 
 def c(x, vec):
