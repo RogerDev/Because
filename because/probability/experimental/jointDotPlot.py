@@ -7,31 +7,30 @@
 import sys
 if '.' not in sys.path:
     sys.path.append('.')
-import rv
-from synth import getData
-import independence
-import time
+from synth import gen_data
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
-from Probability.Prob import ProbSpace
+from probability.prob import ProbSpace
 import numpy as np
 from matplotlib import cm
 
-alpha = .3
+alpha = .01
 
 args = sys.argv
 if len(args) > 1:
     test = args[1]
 if len(args) > 2:
-    v1 = args[2].strip()
+    datSize = int(args[2].strip())
+if len(args) > 3:
+    v1 = args[3].strip()
 else:
     v1 = 'C'
-if len(args) > 3:
-    v2 = args[3].strip()
+if len(args) > 4:
+    v2 = args[4].strip()
 else:
     v2 = 'B'
-if len(args) > 4:
-    v3 = args[4].strip()
+if len(args) > 5:
+    v3 = args[5].strip()
 else:
     v3 = 'A'
 f = open(test, 'r')
@@ -40,13 +39,8 @@ exec(f.read(), globals())
 print('Testing: ', test, '--', testDescript)
 
 # For dat file, use the input file name with the .csv extension
-tokens = test.split('.')
-testFileRoot = str.join('.',tokens[:-1])
-datFileName = testFileRoot + '.csv'
-
-d = getData.DataReader(datFileName)
-data = d.read()
-
+gen = gen_data.Gen(test)
+data = gen.getDataset(datSize)
 
 prob = ProbSpace(data)
 traces = {}
@@ -80,11 +74,13 @@ fig = plt.figure(figsize=(200, 150))
 x = np.array(xt)
 y = np.array(yt)
 z = np.array(zt)
-my_cmap = plt.get_cmap('hot')
+v1Label = '$' + v1 + '$'
+v2Label = '$' + v2 + '$'
+v3Label = '$' + v3 + '$'
 ax = fig.add_subplot(111, projection='3d')
-ax.set_xlabel('$X$', fontsize=20, rotation = 0)
-ax.set_ylabel('$Y$', fontsize=20, rotation = 0)
-ax.set_zlabel('$Z$', fontsize=20, rotation = 0)
+ax.set_xlabel(v1Label, fontsize=20, rotation = 0)
+ax.set_ylabel(v2Label, fontsize=20, rotation = 0)
+ax.set_zlabel(v3Label, fontsize=20, rotation = 0)
 #ax.plot_trisurf(x, y, z, cmap = my_cmap)
-ax.scatter(x, y, z, c=z, cmap=my_cmap, linewidth=0.1, alpha=alpha);
+ax.scatter(x, y, z, color='blue', linewidth=5, alpha=alpha);
 plt.show()

@@ -49,10 +49,7 @@ if len(args) > 4:
 else:
     v2 = 'B'
 joint = False
-if 'joint' in sys.argv:
-    joint = True
-elif 'cum' in sys.argv:
-    cumulative=True
+
 if datSize <= 1000:
     numPts = 15
 elif datSize <= 10000:
@@ -105,61 +102,50 @@ for i in range(tries):
     maxvs = [distr.percentile(100 - lim) for distr in distrs]
     incrs = [(maxvs[i] - minvs[i]) / (numPts-1) for i in range(dims)]
     
+    
     for i in range(numPts):
-        for j in range(numPts):
-            minv1 = minvs[0]
-            incr1 = incrs[0]
-            minv2 = minvs[1]
-            incr2 = incrs[1]
-            tp = [minv1 + i * incr1, minv2 + j * incr2]
-            tps.append(tp)
+
+        minv2 = minvs[1]
+        incr2 = incrs[1]
+        tp = minv2 + i * incr2
+        tps.append(tp)
     #print('tps = ', tps[:10])
     # Traces for plot
     # 1 = Actual Function, 2 = JPROB, 3 = ProbSpace 
     xt1 = []
-    xt2 = []
-    xt3 = []
     yt1 = []
-    yt2 = []
-    yt3 = []
-    zt1 = []
-    zt2 = []
-    zt3 = []
+    yt1_h = []
+    yt1_l = []
+    yt1_hh = []
+    yt1_ll = []
 
+    ptiles = [15, 1.4]
     #print('Testpoints = ', tps)
     tnum = 0
     ssTot = 0 # Total sum of squares for R2 computation
     dp_est = []
     dp_start = time.time()
     for t in tps:
-        aval = t[0]
-        bval = t[1]
-        aincr = incrs[0]
+        bval = t
         bincr = incrs[1]
         condspec = (cond, bval-bincr, bval+bincr)
-        if cumulative:
-            d = prob2.distr(target, condspec)
-            if d is None:
-                psy_x = 0
-            else:
-                psy_x = d.P((None, aval))
-        elif joint:
-            jTarg = [(target, aval-aincr, aval+aincr), (cond, bval-bincr, bval+bincr)]
-            psy_x = prob2.P(jTarg)
-        else:
-            #d = prob2.distr(target, condspec)
-            #if d is None:
-            #    continue
-            psy_x = prob2.P((target, aval-aincr, aval+aincr), condspec)
-        if psy_x is None:
+        ey_x = prob1.E(target, condspec)
+        dist = prob1.distr(target, condspec)
+        std = dist.stDev()
+        #upper = ey_x + std
+        #lower = ey_x - std
+        upper = dist.percentile(100-ptiles[0])
+        lower = dist.percentile(ptiles[0])
+        upper2 = dist.percentile(100-ptiles[1])
+        lower2 = dist.percentile(ptiles[1])
+        if ey_x is None:
             continue
-        if psy_x > 1:
-            #print('got p > 1:  aval, bval = ', aval, bval, psy_x)
-            psy_x = 1
-        dp_est.append(psy_x)
-        xt1.append(t[0])
-        yt1.append(t[1])
-        zt1.append(psy_x)    
+        xt1.append(t)
+        yt1.append(ey_x)
+        yt1_h.append(upper)
+        yt1_l.append(lower)    
+        yt1_hh.append(upper2)
+        yt1_ll.append(lower2)    
     dp_end = time.time()
     results = []
     ysum = 0.0
@@ -169,19 +155,27 @@ fig = plt.figure()
 
 x = np.array(xt1)
 y = np.array(yt1)
-z = np.array(zt1)
+y_h = np.array(yt1_h)
+y_l = np.array(yt1_l)
+y_hh = np.array(yt1_hh)
+y_ll = np.array(yt1_ll)
 
-my_cmap = plt.get_cmap('winter')
-ax = fig.add_subplot(111, projection='3d')
-v1Label = '$' + v1 + '$'
+my_cmap = plt.get_cmap('tab20')
+ax = fig.add_subplot(111)
 v2Label = '$' + v2 + '$'
-if joint:
-    v3Label = '$P(' + v1 + ', ' + v2 + ')$'
-else:
-    v3Label = '$P(' + v1 + ' | ' + v2 + ')$'
-ax.set_xlabel(v1Label, fontweight='bold', rotation = 0)
-ax.set_ylabel(v2Label, fontweight='bold', rotation = 0)
-ax.set_zlabel(v3Label, fontweight='bold', rotation = 0)
-ax.plot_trisurf(x, y, z, cmap = my_cmap)
+v1Label = '$E( ' + v1 + ' | ' + v2 +' )$'
+gray = my_cmap.colors[15]
+dkgray = my_cmap.colors[14]
+blue = my_cmap.colors[0]
+yellow = my_cmap.colors[1]
+ax.set_ylabel(v1Label, fontweight='bold', rotation = 90)
+ax.set_xlabel(v2Label, fontweight='bold', rotation = 0)
+ax.fill_between(x, y_hh, y_ll, color=gray, alpha=.3, linewidth=0)
+ax.fill_between(x, y_h, y_l, color=gray, alpha=.2, linewidth=0)
+ax.plot(x, y_hh, color=dkgray, alpha=.2, linewidth=.75)
+ax.plot(x, y_ll, color=dkgray, alpha=.2, linewidth=.75)
+ax.plot(x, y_h, color=dkgray, alpha=.2, linewidth=1)
+ax.plot(x, y_l, color=dkgray, alpha=.2, linewidth=1)
+ax.plot(x, y, color=blue, linewidth=2)
 
 plt.show()

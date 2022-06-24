@@ -81,9 +81,6 @@ for i in range(tries):
     prob1 = ProbSpace(data, cMethod = 'd!')
     prob2 = ProbSpace(data, cMethod = 'd!')
 
-    lim = 1  # Percentile to start at.  Will go from percentile(lim) to percentile(100-lim)
-
-    print('Test Limit = ', lim, 'standard deviations from mean')
     print('Dimensions = ', dims, '.  Conditionals = ', dims - 1)
     print('Number of points to test for each conditional = ', numPts)
     N = prob1.N
@@ -101,8 +98,8 @@ for i in range(tries):
     distrs = [prob1.distr(c) for c in vars]
     means = [prob1.E(c) for c in vars]
     stds = [distr.stDev() for distr in distrs]
-    minvs = [distr.percentile(lim) for distr in distrs]
-    maxvs = [distr.percentile(100 - lim) for distr in distrs]
+    minvs = [distr.minVal() for distr in distrs]
+    maxvs = [distr.maxVal() for distr in distrs]
     incrs = [(maxvs[i] - minvs[i]) / (numPts-1) for i in range(dims)]
     
     for i in range(numPts):
@@ -136,7 +133,7 @@ for i in range(tries):
         bval = t[1]
         aincr = incrs[0]
         bincr = incrs[1]
-        condspec = (cond, bval-bincr, bval+bincr)
+        condspec = (cond, bval, bval+bincr)
         if cumulative:
             d = prob2.distr(target, condspec)
             if d is None:
@@ -144,7 +141,7 @@ for i in range(tries):
             else:
                 psy_x = d.P((None, aval))
         elif joint:
-            jTarg = [(target, aval-aincr, aval+aincr), (cond, bval-bincr, bval+bincr)]
+            jTarg = [(target, aval, aval+aincr), (cond, bval, bval+bincr)]
             psy_x = prob2.P(jTarg)
         else:
             #d = prob2.distr(target, condspec)

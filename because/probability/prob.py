@@ -14,6 +14,8 @@ from because.probability.rcot.RCoT import RCoT
 
 DEBUG = False
 
+MAX_DISCRETE_VALS = 20
+
 class ProbSpace:
     def __init__(self, ds, density = 1.0, power=1, discSpecs = None, cMethod = 'd!'):
         """ Probability Space (i.e. Joint Probability Distribution) based on a a multivariate dataset
@@ -258,7 +260,10 @@ class ProbSpace:
             See FilteredSpace documentation (above) for details.
         """
         maxAttempts = 8
-        maxDelta = .4 / log(self.N, 10)
+        if self.N > 1:
+            maxDelta = .4 / log(self.N, 10)
+        else:
+            maxDelta = .4
         #print('filterDat: maxDelta = ', maxDelta)
         delta = maxDelta / 2.0
         minPoints_default = max([min([100, sqrt(self.N)]), 20])
@@ -1324,6 +1329,9 @@ class ProbSpace:
 
     def _isDiscreteVar(self, rvName):
         vals = self.ds[rvName]
+        cardinality = len(set(vals))
+        if cardinality > MAX_DISCRETE_VALS:
+            return False
         isDiscrete = True
         for val in vals:
             if val != int(val):
@@ -1470,8 +1478,8 @@ class ProbSpace:
         pdfs = []
         for v in self.fieldList:
             d = self.distr(v)
-            minval = d.minVal()
-            maxval = d.maxVal()
+            minval = d.percentile(5)
+            maxval = d.percentile(95)
             if maxval > maxX:
                 maxX = maxval
             if minval < minX:

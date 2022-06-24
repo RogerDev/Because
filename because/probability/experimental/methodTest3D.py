@@ -52,14 +52,6 @@ joint = False
 if 'joint' in sys.argv:
     joint = True
 print('dims, datSize, tries = ', dims, datSize, tries)
-if datSize <= 1000:
-    numPts = 15
-elif datSize <= 10000:
-    numPts = 20
-elif datSize < 100000:
-    numPts = 25
-else:
-    numPts = 30 # How many eval points for each conditional
 
 #test = 'probability/test/models/doubleCondition.py'
 test = 'probability/test/models/nCondition.py'
@@ -83,7 +75,12 @@ up_run = []
 for i in range(tries):
     gen = gen_data.Gen(test)
     data = gen.getDataset(datSize)
+
+
+
     prob1 = ProbSpace(data, cMethod='d!', power=power)
+    prob2 = ProbSpace(data, cMethod='j', power=power)
+    prob3 = ProbSpace(data, cMethod='u', power=power)
 
     print('Test Limit = ', lim, 'standard deviations from mean')
     print('Dimensions = ', dims, '.  Conditionals = ', dims - 1)
@@ -133,17 +130,24 @@ for i in range(tries):
     # 1 = Actual Function, 2 = JPROB, 3 = ProbSpace 
     xt1 = []
     xt2 = []
+    xt3 = []
+    xt4 = []
     yt1 = []
     yt2 = []
+    yt3 = []
+    yt4 = []
     zt1 = []
     zt2 = []
-    uzt2 = []
-    lzt2 = []
+    zt3 = []
+    zt4 = []
+
     #print('Testpoints = ', tps)
     tnum = 0
     ssTot = 0 # Total sum of squares for R2 computation
     cmprs = []
+    jp_est = []
     dp_est = []
+    up_est = []
     # Generate the target values for comparison
     for t in tps:
         condSpec = []
@@ -165,6 +169,40 @@ for i in range(tries):
         zt1.append(cmpr)
 
     #print('Testing JPROB')
+    jp_start = time.time()
+    for t in tps:
+        condspec = []
+        for c in range(dims-1):
+            condVar = cond[c]
+            val = t[c]
+            spec = (condVar, val)
+            condspec.append(spec)
+        y_x = prob2.E(target, condspec, smoothness=smoothness)
+        jp_est.append(y_x)
+        if y_x is None:
+            continue
+        xt2.append(t[0])
+        yt2.append(t[1])
+        zt2.append(y_x)
+    jp_end = time.time()
+    #print('Testing UPROB')
+    up_start = time.time()
+    for t in tps:
+        condspec = []
+        for c in range(dims-1):
+            condVar = cond[c]
+            val = t[c]
+            spec = (condVar, val-incrs[c], val+incrs[c])
+            condspec.append(spec)
+        y_x = prob3.E(target, condspec, smoothness=smoothness)
+        up_est.append(y_x)
+        if y_x is None:
+            continue
+        xt4.append(t[0])
+        yt4.append(t[1])
+        zt4.append(y_x)
+    up_end = time.time()
+    #print('Testing dp')
     dp_start = time.time()
     for t in tps:
         condspec = []
@@ -174,18 +212,14 @@ for i in range(tries):
             spec = (condVar, val-incrs[c], val+incrs[c])
             condspec.append(spec)
         y_x = prob1.E(target, condspec)
-        dist = prob1.distr(target, condspec)
         dp_est.append(y_x)
-        if y_x is None or dist is None:
+        if y_x is None:
             continue
-        upper = dist.percentile(90)
-        lower = dist.percentile(10)
-        xt2.append(t[0])
-        yt2.append(t[1])
-        zt2.append(y_x)
-        uzt2.append(upper)
-        lzt2.append(lower)
+        xt3.append(t[0])
+        yt3.append(t[1])
+        zt3.append(y_x)
     dp_end = time.time()
+    totalErr_jp = 0.0
     totalErr_dp = 0.0
     results = []
     ysum = 0.0
@@ -194,38 +228,71 @@ for i in range(tries):
         t = tps[i]
         cmpr = cmprs[i]
         ysum += cmpr
+        jp_e = jp_est[i]
         dp_e = dp_est[i]
-        if dp_e is None:
+        up_e = up_est[i]
+        if jp_e is None or dp_e is None or up_e is None:
             continue
+        error2_jp = (cmpr-jp_e)**2
         error2_dp = (cmpr-dp_e)**2
+        error2_up = (cmpr-up_e)**2
+        totalErr_jp += error2_jp
         totalErr_dp += error2_dp
-        results.append((t, dp_e, cmpr, error2_dp))
+        totalErr_up += error2_up
+        results.append((t, jp_e, dp_e, up_e, cmpr, error2_jp, error2_dp, error2_up))
 
     for result in results:
         pass
         #print('tp, y|X, dp, ref, err2_jp, err2_dp = ', result[0], result[1], result[2], result[3], result[4], result[5])
+    rmse_jp = sqrt(totalErr_jp) / len(tps)
+
     rmse_dp = sqrt(totalErr_dp) / len(tps)
+    rmse_dp = sqrt(totalErr_dp) / len(tps)
+    rmse_up = sqrt(totalErr_up) / len(tps)
     # Calc R2 for each
     yavg = ysum / len(tps)
     ssTot = sum([(c - yavg)**2 for c in cmprs])
+    R2_jp = 1 - totalErr_jp / ssTot
     R2_dp = 1 - totalErr_dp / ssTot
+    R2_up = 1 - totalErr_up / ssTot
+    print('JP:')
+    print('   R2 =', R2_jp)
+    print('DP:')
     print('   R2 =', R2_dp)
+    print('UP:')
+    print('   R2 =', R2_up)
+    jp_runtime = round(jp_end - jp_start, 5)
     dp_runtime = round(dp_end - dp_start, 5)
+    up_runtime = round(up_end - up_start, 5)
  
+    jp_results.append(R2_jp)
     dp_results.append(R2_dp)
+    up_results.append(R2_up)
+    jp_run.append(jp_runtime)
     dp_run.append(dp_runtime)
+    up_run.append(up_runtime)
+jp_avg = np.mean(jp_results)
 dp_avg = np.mean(dp_results)
+up_avg = np.mean(up_results)
+jp_min = np.min(jp_results)
 dp_min = np.min(dp_results)
+up_min = np.min(up_results)
+jp_max = np.max(jp_results)
 dp_max = np.max(dp_results)
+up_max = np.max(up_results)
+jp_std = np.std(jp_results)
 dp_std = np.std(dp_results)
+up_std = np.std(up_results)
+jp_runt = np.mean(jp_run)
 dp_runt = np.mean(dp_run)
+up_runt = np.mean(up_run)
 #error = min(max(0, (dp_avg - jp_avg)/ dp_avg), 1)
 print('dims, datSize, tries = ', dims, datSize, tries)
-print('Average R2:  = ', dp_avg)
-print('Min R2 = ',  dp_min)
-print('Max R2 = ', dp_max)
-print('Std R2 = ', dp_std)
-print('Runtime: = ', dp_runt)
+print('Average R2: JP, DP, UP = ', jp_avg, dp_avg, up_avg)
+print('Min R2: JP, DP, UP = ', jp_min, dp_min, up_min)
+print('Max R2: JP, DP, UP = ', jp_max, dp_max, up_max)
+print('Std R2: JP, DP, UP = ', jp_std, dp_std, up_std)
+print('Runtimes: JP, DP, UP = ', jp_runt, dp_runt, up_runt)
 print('NumTests = ', tries)
 # Ideal
 fig = plt.figure(constrained_layout=True)
@@ -233,8 +300,10 @@ fig.suptitle('N=' + str(datSize))
 x = np.array(xt1)
 y = np.array(yt1)
 z = np.array(zt1)
+print(x[:10])
+print(z[:10])
 my_cmap = plt.get_cmap('winter')
-ax = fig.add_subplot(121, projection='3d')
+ax = fig.add_subplot(141, projection='3d')
 ax.plot_trisurf(x, y, z, cmap = my_cmap)
 ax.set_xlabel(v2, fontweight='bold')
 ax.set_ylabel(v3, fontweight='bold')
@@ -242,21 +311,41 @@ ax.set_zlabel('E(' + v1 + ' | ' + v2 + ', ' + v3 + ')', fontweight='bold')
 ax.set(title = "Ideal")
 ax.view_init(20, -165)
 
-# D-Prob
+# J-Prob
 x = np.array(xt2)
 y = np.array(yt2)
 z = np.array(zt2)
-uz = np.array(uzt2)
-lz = np.array(lzt2)
 #print('x, y, z 2 =', len(x), len(y), len(z))
-ax = fig.add_subplot(122, projection='3d')
-ax.plot_trisurf(x, y, lz, color=(.2, .2, .2, .1))
+ax = fig.add_subplot(143, projection='3d')
 ax.plot_trisurf(x, y, z, cmap = my_cmap)
-ax.plot_trisurf(x, y, uz, color=(.2, .2, .2, .1))
 ax.set_xlabel(v2, fontweight='bold')
 ax.set_ylabel(v3, fontweight='bold')
 ax.set_zlabel('E(' + v1 + ' | ' + v2 + ', ' + v3 + ')', fontweight='bold')
-ax.set(title = "R2 = " + str(round(dp_avg,3)))
+ax.set(title = "J-Prob  (R2 = " + str(round(jp_avg,3)) + ")")
+ax.view_init(20, -165)
+
+# D-Prob
+x = np.array(xt3)
+y = np.array(yt3)
+z = np.array(zt3)
+ax = fig.add_subplot(142, projection='3d')
+ax.plot_trisurf(x, y, z, cmap = my_cmap)
+ax.set_xlabel(v2, fontweight='bold')
+ax.set_ylabel(v3, fontweight='bold')
+ax.set_zlabel('E(' + v1 + ' | ' + v2 + ', ' + v3 + ')', fontweight='bold')
+ax.set(title = "D-Prob (R2 = " + str(round(dp_avg,3)) + ")")
+ax.view_init(20, -165)
+
+# U-Prob
+x = np.array(xt4)
+y = np.array(yt4)
+z = np.array(zt4)
+ax = fig.add_subplot(144, projection='3d')
+ax.plot_trisurf(x, y, z, cmap = my_cmap)
+ax.set_xlabel(v2, fontweight='bold')
+ax.set_ylabel(v3, fontweight='bold')
+ax.set_zlabel('E(' + v1 + ' | ' + v2 + ', ' + v3 + ')', fontweight='bold')
+ax.set(title = "U-Prob (R2 = " + str(round(up_avg,3)) + ")")
 ax.view_init(20, -165)
 
 plt.show()

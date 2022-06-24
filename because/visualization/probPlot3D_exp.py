@@ -113,10 +113,12 @@ for i in range(tries):
     tps = []
     numTests = numPts**(dims-1)
     evaluations = 0
-    means = [prob1.E(c) for c in cond]
-    stds = [prob1.distr(c).stDev() for c in cond]
-    minvs = [means[i] - stds[i] * lim for i in range(len(means))]
-    incrs = [(std * lim - std * -lim) / (numPts-1) for std in stds]
+    distrs = [prob1.distr(c) for c in cond]
+    means = [distr.E() for distr in distrs]
+    stds = [distr.stDev() for distr in distrs]
+    minvs = [distr.percentile(1) for distr in distrs]
+    maxvs = [distr.percentile(99) for distr in distrs]
+    incrs = [(maxvs[i] - minvs[i]) / (numPts-1) for i in range(conds)]
 
     # Generate the test points
     for i in range(numTests):
@@ -132,131 +134,38 @@ for i in range(tries):
     # Traces for plot
     # 1 = Actual Function, 2 = JPROB, 3 = ProbSpace 
     xt1 = []
-    xt2 = []
     yt1 = []
-    yt2 = []
     zt1 = []
-    zt2 = []
-    uzt2 = []
-    lzt2 = []
     #print('Testpoints = ', tps)
     tnum = 0
     ssTot = 0 # Total sum of squares for R2 computation
     cmprs = []
     dp_est = []
-    # Generate the target values for comparison
-    for t in tps:
-        condSpec = []
-        for c in range(dims-1):
-            condVar = cond[c]
-            val = t[c]
-            spec = (condVar, val)
-            condSpec.append(spec)
-        cum = 0.0
-        smoothing = 200
-        for i in range(smoothing):
-            test = gen.calcOne(target, condSpec)
-            cum += test
-        cmpr = cum / smoothing
-        #cmpr = tanh(t[0]) + sin(t[1])
-        cmprs.append(cmpr)
-        xt1.append(t[0])
-        yt1.append(t[1])
-        zt1.append(cmpr)
-
-    #print('Testing JPROB')
-    dp_start = time.time()
     for t in tps:
         condspec = []
         for c in range(dims-1):
             condVar = cond[c]
             val = t[c]
-            spec = (condVar, val-incrs[c], val+incrs[c])
+            spec = (condVar, val, val+incrs[c])
             condspec.append(spec)
         y_x = prob1.E(target, condspec)
-        dist = prob1.distr(target, condspec)
-        dp_est.append(y_x)
-        if y_x is None or dist is None:
+        if y_x is None:
             continue
-        upper = dist.percentile(90)
-        lower = dist.percentile(10)
-        xt2.append(t[0])
-        yt2.append(t[1])
-        zt2.append(y_x)
-        uzt2.append(upper)
-        lzt2.append(lower)
+        xt1.append(t[0])
+        yt1.append(t[1])
+        zt1.append(y_x)
     dp_end = time.time()
-    totalErr_dp = 0.0
-    results = []
-    ysum = 0.0
-    cmprs2 = []
-    for i in range(len(cmprs)):
-        t = tps[i]
-        cmpr = cmprs[i]
-        ysum += cmpr
-        dp_e = dp_est[i]
-        if dp_e is None:
-            continue
-        error2_dp = (cmpr-dp_e)**2
-        totalErr_dp += error2_dp
-        results.append((t, dp_e, cmpr, error2_dp))
-
-    for result in results:
-        pass
-        #print('tp, y|X, dp, ref, err2_jp, err2_dp = ', result[0], result[1], result[2], result[3], result[4], result[5])
-    rmse_dp = sqrt(totalErr_dp) / len(tps)
-    # Calc R2 for each
-    yavg = ysum / len(tps)
-    ssTot = sum([(c - yavg)**2 for c in cmprs])
-    R2_dp = 1 - totalErr_dp / ssTot
-    print('   R2 =', R2_dp)
-    dp_runtime = round(dp_end - dp_start, 5)
- 
-    dp_results.append(R2_dp)
-    dp_run.append(dp_runtime)
-dp_avg = np.mean(dp_results)
-dp_min = np.min(dp_results)
-dp_max = np.max(dp_results)
-dp_std = np.std(dp_results)
-dp_runt = np.mean(dp_run)
-#error = min(max(0, (dp_avg - jp_avg)/ dp_avg), 1)
-print('dims, datSize, tries = ', dims, datSize, tries)
-print('Average R2:  = ', dp_avg)
-print('Min R2 = ',  dp_min)
-print('Max R2 = ', dp_max)
-print('Std R2 = ', dp_std)
-print('Runtime: = ', dp_runt)
-print('NumTests = ', tries)
-# Ideal
 fig = plt.figure(constrained_layout=True)
 fig.suptitle('N=' + str(datSize))
 x = np.array(xt1)
 y = np.array(yt1)
 z = np.array(zt1)
 my_cmap = plt.get_cmap('winter')
-ax = fig.add_subplot(121, projection='3d')
+ax = fig.add_subplot(111, projection='3d')
 ax.plot_trisurf(x, y, z, cmap = my_cmap)
 ax.set_xlabel(v2, fontweight='bold')
 ax.set_ylabel(v3, fontweight='bold')
 ax.set_zlabel('E(' + v1 + ' | ' + v2 + ', ' + v3 + ')', fontweight='bold')
-ax.set(title = "Ideal")
-ax.view_init(20, -165)
-
-# D-Prob
-x = np.array(xt2)
-y = np.array(yt2)
-z = np.array(zt2)
-uz = np.array(uzt2)
-lz = np.array(lzt2)
-#print('x, y, z 2 =', len(x), len(y), len(z))
-ax = fig.add_subplot(122, projection='3d')
-ax.plot_trisurf(x, y, lz, color=(.2, .2, .2, .1))
-ax.plot_trisurf(x, y, z, cmap = my_cmap)
-ax.plot_trisurf(x, y, uz, color=(.2, .2, .2, .1))
-ax.set_xlabel(v2, fontweight='bold')
-ax.set_ylabel(v3, fontweight='bold')
-ax.set_zlabel('E(' + v1 + ' | ' + v2 + ', ' + v3 + ')', fontweight='bold')
-ax.set(title = "R2 = " + str(round(dp_avg,3)))
 ax.view_init(20, -165)
 
 plt.show()

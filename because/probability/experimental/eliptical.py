@@ -3,7 +3,9 @@ import numpy as np
 import math
 import scipy
 from scipy import special
-
+from numpy.random import *
+from because.synth import gen_data
+from because.probability import prob
 
 def normalQ(mu, sigma, p):
     q = mu + sigma * 2**.5 * special.erfinv(2*p - 1)
@@ -25,19 +27,43 @@ ax.axes.set_zlim3d(lims)
 numElipses = 3
 alpha = .16 / numElipses
 color = (0,0,1)
+
+file = 'probability/test/models/nCondition.py'
+v1 = 'A3'
+v2 = 'B'
+v3 = 'C'
+
+gen = gen_data.Gen(file)
+data = gen.getDataset(10000)
+prob = prob.ProbSpace(data)
+
 def plotNormal(mu, sigma):
 
-    u = np.linspace(0, 2 * np.pi, 100)
-    v = np.linspace(0, np.pi, 100)
-    ringwidth = normalQ(0,1, .55) - normalQ(0,1,.45)
-
+    u = np.linspace(0, 2 * np.pi, 10)
+    v = np.linspace(0, np.pi, 10)
+    ringwidth = normalQ(0,1, .95) - normalQ(0,1,.05)
+    outer = []
+    for i in u:
+        inner = []
+        for j in v:
+            givenSpec = [(v2, i), (v3, j)]
+            d = prob.distr(v1, givenSpec)
+            if d is not None and d.N > 0:
+                val = d.percentile(60)
+            else:
+                val = 0
+            inner.append(val)
+        outer.append(inner)
+    outer = np.array(outer)
+    print('outer = ', outer)
     x = sigma[0] * np.outer(np.cos(u), np.sin(v)) * ringwidth
     y = sigma[1] * np.outer(np.sin(u), np.sin(v)) * ringwidth
-    z = sigma[2] * np.outer(np.ones(np.size(u)), np.cos(v)) * ringwidth
+#   z = sigma[2] * np.outer(np.ones(np.size(u)), np.cos(v) + np.cos(u)) * ringwidth
+    z = outer * np.outer(np.ones(np.size(u)), np.cos(v))
     plt.autoscale(False)
 
     # Plot the surfaces
-    for i in range(10):
+    for i in range(1):
         j = i + 2
         print('ringwidth = ', ringwidth)
         xt = x + mu[0]
@@ -65,6 +91,6 @@ def plotNormal(mu, sigma):
 
     #ax.plot_surface(x, y, z, color = (0,0,1.0), alpha = alpha)
 plotNormal((0,0,0), (1, .7, .5))
-plotNormal((.5,.2,-.2), (1, .6, .6))
-plotNormal((-2.4,-2.2,-2.2), (1, .7, .6))
+#plotNormal((.5,.2,-.2), (1, .6, .6))
+#plotNormal((-2.4,-2.2,-2.2), (1, .7, .6))
 plt.show()

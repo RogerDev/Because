@@ -258,13 +258,20 @@ class Gen:
             float: The value of the target variable.
         """
         locs = locals()
+        givenVars = []
         for given in givens:
             var, val = given
-            locs[var] = val          
+            locs[var] = val
+            givenVars.append(var)          
         for varEquation in varEquations:
-            if varEquation[:len(target)] == target:
+            isGiven = False
+            for givenVar in givenVars:
+                # Don't re-execute any givens equations.
+                if varEquation[:len(givenVar)] == givenVar:
+                    isGiven = True
+                    break
+            if not isGiven:
                 exec(varEquation, globals(), locs)
-                break
         return eval(target)
 
     def getVariables(self):

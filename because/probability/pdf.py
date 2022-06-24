@@ -292,6 +292,10 @@ class PDF:
         #assert False, 'BinList = ' + str(self.bins)
         ptile2 = ptile / 100.0
         cum = 0.0
+        if ptile == 0:
+            return self.minVal()
+        if ptile == 100:
+            return self.maxVal()
         val = None
         for i in range(self.binCount):
             bin = self.bins[i]

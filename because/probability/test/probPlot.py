@@ -12,7 +12,7 @@ import time
 from because.causality import RV
 from because.causality import cGraph
 from because.synth import read_data
-from because.probability import independence
+
 
 
 args = sys.argv
