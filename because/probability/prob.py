@@ -1119,7 +1119,7 @@ class ProbSpace:
         #print('old = ', spec, ', new =', outSpec, ', delta = ', deltaAdjust)
         return outSpec
 
-    def dependence(self, rv1, rv2, givenSpecs=[], power=None, raw=False, seed=None, num_f=100, num_f2=5, dMethod='prob'):
+    def dependence(self, rv1, rv2, givenSpecs=[], power=None, raw=False, seed=None, num_f=100, num_f2=5, dMethod='rcot'):
         """
         givens is [given1, given2, ... , givenN]
 
@@ -1257,7 +1257,7 @@ class ProbSpace:
 
 
 
-    def independence(self, rv1, rv2, givenSpecs=None, power=None, seed=None, num_f=100, num_f2=5, dMethod='prob'):
+    def independence(self, rv1, rv2, givenSpecs=None, power=None, seed=None, num_f=100, num_f2=5, dMethod='rcot'):
         """
             Calculate the independence between two variables, and an optional set of givens.
             This is a heuristic inversion
@@ -1273,7 +1273,7 @@ class ProbSpace:
         return ind
 
 
-    def isIndependent(self, rv1, rv2, givenSpecs=None, power=None, seed=None, num_f=100, num_f2=5, dMethod='prob'):
+    def isIndependent(self, rv1, rv2, givenSpecs=None, power=None, seed=None, num_f=100, num_f2=5, dMethod='rcot'):
         """ Determines if two variables are independent, optionally given a set of givens.
             Returns True if independent, otherwise False
         """
