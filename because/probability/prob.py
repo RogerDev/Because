@@ -952,7 +952,8 @@ class ProbSpace:
             Dcond = len(filtConds)  # Number of dimensions to filter
             Dquery = Dtarg + Dcond # Dim of the query
             Ntarg = self.N**(Dtarg/Dquery) # Number of points to return from filter
-            filtSpace = self.SubSpace(filtConds, density = self.density, power = self.power, discSpecs=self.discSpecs, minPoints = Ntarg * .8, maxPoints = Ntarg * 1.2)
+            #filtSpace = self.SubSpace(filtConds, density = self.density, power = self.power, discSpecs=self.discSpecs, minPoints = Ntarg * .8, maxPoints = Ntarg * 1.2)
+            filtSpace = self.SubSpace(filtConds, density = self.density, power = self.power, minPoints = Ntarg * .8, maxPoints = Ntarg * 1.2)
         else:
             filtSpace = self  # No required pre-filtering
 
@@ -1241,7 +1242,7 @@ class ProbSpace:
             #calDep = max([min([calDep, 1]), 0])
             #return calDep
 
-        print('Cond distr too small: ', rv1, rv2, givens)
+        print('Cond distr too small: ', rv1, rv2, givenSpecs)
         return 0.0
 
     def separateSpecs(self, specs):

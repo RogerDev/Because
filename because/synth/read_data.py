@@ -57,6 +57,7 @@ class Reader():
             datastart = random.choice(range(dataslack))
             data = data[datastart:datastart + self.limit]
         for line in data:
+            outFields = []
             if len(line) <= 1:
                 # Skip any empty lines.
                 continue
@@ -64,8 +65,16 @@ class Reader():
                 line = line[:-1]
             tokens = line.split(',')
             for i in range(len(self.vars)):
-                val = float(tokens[i])
-                self.varData[self.vars[i]].append(val)
+                try:
+                    val = float(tokens[i])
+                except:
+                    print('Reader: bad field in column', i, ' = ', tokens[i])
+                    continue
+                outFields.append(val)
+            if len(outFields) == len(self.vars):
+                for i in range(len(self.vars)):
+                    val = outFields[i]
+                    self.varData[self.vars[i]].append(val)
         self.sampleCount = len(self.varData[self.vars[0]])
         if not quiet:
             print('getData: ', len(data), 'records read.')

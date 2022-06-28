@@ -7,9 +7,9 @@ cMethod parameter.  See ProbSpace for details on the different
 methods.
 Set the method using prob1 and prob2 constructors below.
 """
-import sys
-if '.' not in sys.path:
-    sys.path.append('.')
+from sys import argv, path
+if '.' not in path:
+    path.append('.')
 import time
 from math import log, tanh, sqrt, sin, cos, e
 
@@ -23,162 +23,157 @@ from because.synth import read_data, gen_data
 from because.probability import independence
 from because.probability.prob import ProbSpace
 from because.probability.rkhs.rkhsMV import RKHS
+from because.visualization import grid
 
-tries = 1
-datSize = 200
-# Arg format is  <datSize>
-dims = 2
-smoothness = 1
-cumulative = False
-if '-h' in sys.argv:
-    print('Usage: python because/probability/test/cprobPlot2D.py datSize [smoothness] [cum]')
-    print('  datSize is the number of records to generate')
-    print('  smoothness is the smoothness parameter to use for kernel methods (default 1.0)')
-    print('  "cum" as a final parameter causes comparison of cumulative distributions.')
-args = sys.argv
-if len(args) > 1:
-    test = args[1]
-if len(args) > 2:
-    datSize = int(args[2].strip())
-if len(args) > 3:
-    v1 = args[3].strip()
-else:
-    v1 = 'C'
-if len(args) > 4:
-    v2 = args[4].strip()
-else:
-    v2 = 'B'
-joint = False
-if 'joint' in sys.argv:
-    joint = True
-elif 'cum' in sys.argv:
-    cumulative=True
-if datSize <= 1000:
-    numPts = 15
-elif datSize <= 10000:
-    numPts = 20
-elif datSize < 100000:
-    numPts = 25
-else:
-    numPts = 30 # How many eval points for each conditional
-print('dims, datSize, tries = ', dims, datSize, tries)
+def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], gtype='pdf', probspace=None):
+    assert len(targetSpec) == 1 and len(condSpec) == 1 or len(targetSpec) == 2 and len(condSpec) == 0, \
+        'probPlot2D.show:  Must provide one target and one condition or two targets and no conditions.  Got: ' + str(targetSpec) + ', ' + str(condSpec)
 
-f = open(test, 'r')
-exec(f.read(), globals())
-
-print('Testing: ', test, '--', testDescript)
-
-# Generate the data
-jp_results = []
-ps_results = []
-jp_run = []
-ps_run = []
-for i in range(tries):
-    # Generate a new sample
-    gen = gen_data.Gen(test)
-    data = gen.getDataset(datSize)
-
-    prob1 = ProbSpace(data, cMethod = 'd!')
-    prob2 = ProbSpace(data, cMethod = 'd!')
-
-    print('Dimensions = ', dims, '.  Conditionals = ', dims - 1)
-    print('Number of points to test for each conditional = ', numPts)
-    N = prob1.N
-    # P(A2 | B)
-    target = v1
-    cond = v2 
-
-    evaluations = 0
-    start = time.time()
-    results = []
-    vars = [target, cond]
-    tps = []
-    numTests = numPts**(dims)
-    evaluations = 0
-    distrs = [prob1.distr(c) for c in vars]
-    means = [prob1.E(c) for c in vars]
-    stds = [distr.stDev() for distr in distrs]
-    minvs = [distr.minVal() for distr in distrs]
-    maxvs = [distr.maxVal() for distr in distrs]
-    incrs = [(maxvs[i] - minvs[i]) / (numPts-1) for i in range(dims)]
+    lim = 1
     
-    for i in range(numPts):
-        for j in range(numPts):
-            minv1 = minvs[0]
-            incr1 = incrs[0]
-            minv2 = minvs[1]
-            incr2 = incrs[1]
-            tp = [minv1 + i * incr1, minv2 + j * incr2]
-            tps.append(tp)
-    #print('tps = ', tps[:10])
-    # Traces for plot
-    # 1 = Actual Function, 2 = JPROB, 3 = ProbSpace 
-    xt1 = []
-    xt2 = []
-    xt3 = []
-    yt1 = []
-    yt2 = []
-    yt3 = []
-    zt1 = []
-    zt2 = []
-    zt3 = []
+    cumulative = False
+    if gtype == 'cdf':
+        cumulative = True
 
-    #print('Testpoints = ', tps)
-    tnum = 0
-    ssTot = 0 # Total sum of squares for R2 computation
-    dp_est = []
+    if numRecs <= 1000:
+        numPts = 15
+    elif numRecs <= 10000:
+        numPts = 20
+    elif numRecs < 100000:
+        numPts = 25
+    else:
+        numPts = 30 # How many eval points for each conditional
+    if probspace is None:
+        # Generate the data
+        f = open(dataPath, 'r')
+        exec(f.read(), globals())
+
+        print('Testing: ', dataPath, '--', testDescript)
+
+        gen = gen_data.Gen(dataPath)
+        data = gen.getDataset(numRecs)
+
+        prob1 = ProbSpace(data)
+
+    else:
+        prob1 = probspace
+    
+    N = prob1.N
+    targets = [spec[0] for spec in targetSpec]
+    conds = [spec[0] for spec in condSpec]
+    if len(targets) == 1:
+        joint = False
+    else:
+        joint = True
+    if gtype == 'cdf':
+        cumulative = True
+    start = time.time()
+    vars = targets + conds
+    g = grid.Grid(prob1, vars, lim, numPts)
+    tps = g.makeGrid()
+    incrs = g.getIncrs()
+    
+    xt1 = []
+    yt1 = []
+    zt1 = []
+ 
     dp_start = time.time()
-    for t in tps:
-        aval = t[0]
-        bval = t[1]
+    for tp in tps:
+        aval = tp[0]
+        bval = tp[1]
         aincr = incrs[0]
         bincr = incrs[1]
-        condspec = (cond, bval, bval+bincr)
         if cumulative:
-            d = prob2.distr(target, condspec)
-            if d is None:
-                psy_x = 0
+            if not joint:
+                tSpec = [(targets[0],)]
+                cSpec = [(conds[0], None, bval)]
+                d = prob1.distr(tSpec, cSpec)
+                if d is None:
+                    psy_x = 0
+                else:
+                    psy_x = d.P((None, aval))
             else:
-                psy_x = d.P((None, aval))
-        elif joint:
-            jTarg = [(target, aval, aval+aincr), (cond, bval, bval+bincr)]
-            psy_x = prob2.P(jTarg)
+                tSpec = [(targets[0], None, aval), (targets[1], None, bval)]
+                cSpec = []
+                psy_x = prob1.P(tSpec)
         else:
-            #d = prob2.distr(target, condspec)
-            #if d is None:
-            #    continue
-            psy_x = prob2.P((target, aval-aincr, aval+aincr), condspec)
+            if not joint:
+                tSpec = [(targets[0], aval, aval + aincr)]
+                cSpec = [(conds[0], bval, bval + bincr)]
+            else:
+                tSpec = [(targets[0], aval, aval + aincr), (targets[1], bval, bval + bincr)]
+                cSpec = []
+            psy_x = prob1.P(tSpec, cSpec)
         if psy_x is None:
             continue
         if psy_x > 1:
             #print('got p > 1:  aval, bval = ', aval, bval, psy_x)
             psy_x = 1
-        dp_est.append(psy_x)
-        xt1.append(t[0])
-        yt1.append(t[1])
+        xt1.append(tp[0])
+        yt1.append(tp[1])
         zt1.append(psy_x)    
     dp_end = time.time()
-    results = []
-    ysum = 0.0
 
-fig = plt.figure()
+    fig = plt.figure()
 
 
-x = np.array(xt1)
-y = np.array(yt1)
-z = np.array(zt1)
+    x = np.array(xt1)
+    y = np.array(yt1)
+    z = np.array(zt1)
 
-my_cmap = plt.get_cmap('winter')
-ax = fig.add_subplot(111, projection='3d')
-v1Label = '$' + v1 + '$'
-v2Label = '$' + v2 + '$'
-if joint:
-    v3Label = '$P(' + v1 + ', ' + v2 + ')$'
-else:
-    v3Label = '$P(' + v1 + ' | ' + v2 + ')$'
-ax.set_xlabel(v1Label, fontweight='bold', rotation = 0)
-ax.set_ylabel(v2Label, fontweight='bold', rotation = 0)
-ax.set_zlabel(v3Label, fontweight='bold', rotation = 0)
-ax.plot_trisurf(x, y, z, cmap = my_cmap)
+    my_cmap = plt.get_cmap('winter')
+    ax = fig.add_subplot(111, projection='3d')
 
-plt.show()
+    v1Label = '$' + vars[0] + '$'
+    v2Label = '$' + vars[1] + '$'
+    if joint:
+        conj = ', '
+    else:
+        conj = ' | '
+    if cumulative:
+        v3Label = '$CDF( ' + vars[0] + conj + vars[1] + ' )$'
+    else:
+        v3Label = '$P(' + vars[0] + conj + vars[1] + ')$'
+    ax.set_xlabel(v1Label, fontweight='bold', rotation = 0)
+    ax.set_ylabel(v2Label, fontweight='bold', rotation = 0)
+    ax.set_zlabel(v3Label, fontweight='bold', rotation = 0)
+    ax.plot_trisurf(x, y, z, cmap = my_cmap)
+
+    plt.show()
+
+if __name__ == '__main__':
+    if '-h' in argv or len(argv) < 4:
+        print('Usage: python because/visualization/probPlot2D.py dataPath targets condition [numRecs]')
+        print('  dataPath is the path to a .py (synthetic data) or .csv file')
+        print('  targets is the variable(s) whose distribution to plot.')
+        print('  conditions are the conditional variable names.')
+        print('  numRecs is the number of records to generate')
+    else:
+        numRecs = 0 
+        args = argv
+        dataPath = args[1].strip()
+        targets = args[2].strip()
+        conditions = args[3].strip()
+        tokens = targets.split(',')
+        tSpec = []
+        for token in tokens:
+            varName = token.strip()
+            if varName:
+                tSpec.append((varName,))
+        tokens = conditions.split(',')
+        cSpec = []
+        for token in tokens:
+            varName = token.strip()
+            if varName:
+                cSpec.append((varName,))
+        if len(args) > 4:
+            try:
+                numRecs = int(args[4].strip())
+            except:
+                pass
+        gtype = 'pdf'
+        if 'cum' in args:
+            gtype = 'cdf'
+       
+        #print('dims, datSize, numRecs = ', dims, datSize, numRecs)
+        show(dataPath=dataPath, numRecs=numRecs, targetSpec=tSpec, condSpec=cSpec, gtype=gtype)
