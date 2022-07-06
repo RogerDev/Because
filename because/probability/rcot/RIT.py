@@ -30,13 +30,13 @@ def colMeans(vec):
     vec = np.array(vec)
     return np.mean(vec, axis=0)
 
-def RIT(x,y,num_f2=5,approx="lpd4", r=500, seed=None):
+def RIT(x,y,num_f2=5,approx="lpd4", seed=None):
 
     x = np.matrix(x).T    
     y = np.matrix(y).T
 
     if(np.std(x) == 0 or np.std(y) == 0):
-        return 1   # this is P value
+        return ([1.0], 0)   # this is P value
     
     x = matrix2(x)
     y = matrix2(y)
@@ -83,6 +83,7 @@ def RIT(x,y,num_f2=5,approx="lpd4", r=500, seed=None):
     #print(Cov.shape)
     # eig_d = eigen(Cov);
     w,v = np.linalg.eig(Cov)
+    w = w.real
     # eig_d$values=eig_d$values[eig_d$values>0];
     w = [i for i in w if i>0]
     #print("eig_d$values: ",w)
@@ -97,9 +98,12 @@ def RIT(x,y,num_f2=5,approx="lpd4", r=500, seed=None):
     # }
     if(approx == "lpd4"):
         w1 = w
-        p = 1 - lpb4(np.array(w1), Sta)
+        try:
+            p = 1 - lpb4(np.array(w1), Sta)
+        except ValueError:
+            p = [1 - hbe(np.array(w1), Sta)]
         if(p==None or np.isnan(p)):
-            p = 1 - hbe(w1, Sta)
+            p = [1 - hbe(np.array(w1), Sta)]
 
     #print("Sta: ",Sta)
     #print("p: ",p)

@@ -49,8 +49,8 @@ def RCoT(x, y, z=None, approx="lpd4", num_f=100, num_f2=5, r=500, seed=None):
 
     # Unconditional Testing
     if (z is None):
-        out=RIT(x,y,num_f2=num_f2,r=r,approx=approx,seed=seed);
-        return(out)
+        out=RIT(x,y,num_f2=num_f2,approx=approx,seed=seed);
+        return out
     z = np.matrix(z).T 
     
     # print("x: ",x)
@@ -104,7 +104,7 @@ def RCoT(x, y, z=None, approx="lpd4", num_f=100, num_f2=5, r=500, seed=None):
     # if sd of x or sd of y == 0 then x and y are independent
     if (x.std() == 0 or y.std() == 0):
       # p=1 and Sta=0
-        out = (1, 0)
+        out = ([1.0], 0)
         return(out)
 
     #r1 = x.shape[0]
@@ -215,7 +215,7 @@ def RCoT(x, y, z=None, approx="lpd4", num_f=100, num_f2=5, r=500, seed=None):
     #     print()
 
     I = np.eye(num_f)
-    L = sc.cholesky((Czz + (np.eye(num_f) * 1e-6)), lower=True)
+    L = sc.cholesky((Czz + (np.eye(num_f) * 1e-4)), lower=True)
     L_inv = sc.solve_triangular(L, I, lower=True)
     i_Czz = L_inv.T.dot(L_inv)  # numf,numf
     # print("i_Czz: ",i_Czz)
