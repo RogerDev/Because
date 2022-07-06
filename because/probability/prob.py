@@ -17,7 +17,8 @@ DEBUG = False
 MAX_DISCRETE_VALS = 20
 
 class ProbSpace:
-    def __init__(self, ds, density = 1.0, power=1, discSpecs = None, cMethod = 'd!'):
+    def __init__(self, ds, categorical=[], density = 1.0, power=1, discSpecs = None, 
+                cMethod = 'd!', textInfo=None):
         """ Probability Space (i.e. Joint Probability Distribution) based on a a multivariate dataset
             of random variables provided.  'JPS' (Joint Probability Space) is an alias for ProbSpace.
             The Joint Probability Space is a multi-dimensional probability distribution that embeds all
@@ -71,21 +72,53 @@ class ProbSpace:
         self.ds = ds
         self.density = density
         self.fieldList = list(ds.keys())
-        self._discreteVars = self._getDiscreteVars()
+        self.fieldTypes = []
         self.fieldIndex = {}
+        self.stringMap = {}
+        self.stringMapR = {}
         for i in range(len(self.fieldList)):
             key = self.fieldList[i]
             self.fieldIndex[key] = i
+        if textInfo is not None:
+            # For efficiency, this info gets passed from parent space
+            # so we don't need to recompute.
+            categoricalVars, fieldTypes, stringMap, stringMapR = textInfo
+            self.categoricalVars = categoricalVars
+            self.fieldTypes = fieldTypes
+            self.stringMap = stringMap
+            self.stringMapR = stringMapR
+        else:
+            # Stand alone space.  Compute all the basic info about the variables.
+            self.categoricalVars = categorical
+            for i in range(len(self.fieldList)):
+                varName = self.fieldList[i]
+                vals = self.ds[varName]
+                if vals:
+                    testVal = self.ds[self.fieldList[i]][0]
+                    if type(testVal) == type(''):
+                        self.fieldTypes.append('s')
+                        self.stringMap[varName] = {}
+                        self.stringMapR[varName] = {}
+                        numVals = self.convertToNumeric(varName, vals)
+                        self.ds[varName] = numVals
+                        if varName not in self.categoricalVars:
+                            # All string vars are categorical.
+                            self.categoricalVars.append(varName)
+                    else:
+                        self.fieldTypes.append('n')
         # Convert to Numpy array
         npDat = []
         for field in self.fieldList:
             npDat.append(ds[field])
         self.aData = np.array(npDat)
+
         self.N = self.aData.shape[1]
+
         self.probCache = {} # Probability cache
         self.distrCache = {} # Distribution cache
         self.expCache = {} # Expectation cache
         self.rkhsCache = {} # RKHS Cache
+        self._discreteVars = self._getDiscreteVars()
         self.fieldAggs = self.getAgg(ds)
         if self.N:
             if discSpecs:
@@ -100,24 +133,39 @@ class ProbSpace:
         self.parentProb = None
         # Parent Query is the query on the parents space that resulted in the subspace.
         self.parentQuery = None
+                    
+    def convertToNumeric(self, varName, vals):
+        unique = list(set(vals))
+        unique.sort()
+        dict = self.stringMap[varName]
+        dictR = self.stringMapR[varName]
+        numTag = 1
+        for item in unique:
+            dict[item] = numTag
+            dictR[numTag] = item
+            numTag += 1
+        numVals = []
+        for val in vals:
+            numVal = dict[val]
+            numVals.append(numVal)
+        return numVals
 
     def getAgg(self, ds):
-        fieldList = list(ds.keys())
-        numObs = self.aData.shape[1]  # Number of observations
+        aData = self.aData
+        numObs = aData.shape[1]  # Number of observations
         if numObs > 0:
             mins = self.aData.min(1)
             maxs = self.aData.max(1)
             means = self.aData.mean(1)
             stds = self.aData.std(1)
         outDict = {}
-        for i in range(self.aData.shape[0]):
-            fieldName = fieldList[i]
-            if numObs:
+        if numObs:
+            for i in range(self.aData.shape[0]):
+                fieldName = self.fieldList[i]
                 aggs = (mins[i], maxs[i], means[i], stds[i])
-            else:
-                aggs = (0,0,0,0)
-            outDict[fieldName] = aggs
+                outDict[fieldName] = aggs
         return outDict
+
 
     def calcDiscSpecs(self):
         discSpecs = []
@@ -131,23 +179,23 @@ class ProbSpace:
                 maxV = 0
             isDiscrete = var in self._discreteVars
             if isDiscrete:
-                minV = int(minV)
-                maxV = int(maxV)
-                nBins = maxV - minV + 1
-                binStarts = [v for v in range(minV, maxV + 1)]
-                vals, counts = np.unique(self.aData[i], return_counts = True)
+                field = self.aData[i]
+                vals, counts = np.unique(field, return_counts = True)
+                nBins = len(vals)
+                binStarts = vals
                 hist = np.zeros((len(binStarts),))
                 for j in range(len(vals)):
-                    val = int(vals[j])
                     count = counts[j]
                     hist[j] = count
-                edges = [v for v in range(minV, maxV + 2)]
+                vals2 = list(vals) + [vals[-1] + 1.0]
+                edges = np.array(vals2)
             else:
                 if self.N < 100:
                     nBins = 10
                 else:
                     nBins = int(self.density * math.sqrt(self.N))
-                hist, edges = np.histogram(self.aData[i], nBins)
+                field = np.asarray(self.aData[i], 'float64')
+                hist, edges = np.histogram(field, nBins)
             discSpecs.append((nBins, minV, maxV, edges, hist, isDiscrete))
         return discSpecs
 
@@ -233,10 +281,14 @@ class ProbSpace:
         #print('givens = ', givensSpec)
         #print('minPoints, maxPoints, self.N = ', minPoints, maxPoints, self.N)
         filtDat, parentProb, finalQuery = self.filter(givensSpec, minPoints=minPoints, maxPoints=maxPoints)
+        # Prepare the textInfo vars to transfer to the subspace
+        textInfo = (self.categoricalVars, self.fieldTypes, self.stringMap, self.stringMapR)
         if fixDistr:
-            newPS = ProbSpace(filtDat, power = power, density = density, discSpecs = discSpecs, cMethod = self.cMethod)
+            newPS = ProbSpace(filtDat, power = power, density = density, 
+                discSpecs = discSpecs, cMethod = self.cMethod, textInfo = textInfo)
         else:
-            newPS = ProbSpace(filtDat, power = power, density = density, cMethod = self.cMethod)
+            newPS = ProbSpace(filtDat, power = power, density = density,
+                cMethod = self.cMethod, textInfo = textInfo)
         newPS.parentProb = parentProb
         newPS.parentQuery = finalQuery
         if DEBUG:
@@ -306,29 +358,43 @@ class ProbSpace:
             for i in range(self.N):
                 include = True
                 for filt in filtSpec2:
-                    if len(filt) == 2:
-                        var, targetVal = filt
-                        if type(targetVal) == type((0,)):
-                            targetVal = val[0]
+                    var = filt[0]
+                    if var in self.categoricalVars:
                         fieldInd = self.fieldIndex[var]
+                        if self.fieldTypes[fieldInd] == 's':
+                            # Convert values from strings to numeric tags
+                            dict = self.stringMap[var]
+                            filtVals = [dict[val] for val in list(filt[1:])]
+                        else:
+                            filtVals = list(filt[1:])
                         val = adat[fieldInd, i]
-                        if val != targetVal:
+                        if val not in filtVals:
                             include = False
                             break
                     else:
-                        var, low, high = filt
-                        fieldInd = self.fieldIndex[var]
-                        dSpec = self.discSpecs[fieldInd]
-                        varMin = dSpec[1]
-                        varMax = dSpec[2]
-                        if low is None:
-                            low = varMin
-                        if high is None:
-                            high = varMax + .0001
-                        val = adat[fieldInd, i]
-                        if val < low or val >= high:
-                            include = False
-                            break
+                        if len(filt) == 2:
+                            var, targetVal = filt
+                            if type(targetVal) == type((0,)):
+                                targetVal = val[0]
+                            fieldInd = self.fieldIndex[var]
+                            val = adat[fieldInd, i]
+                            if val != targetVal:
+                                include = False
+                                break
+                        else:
+                            var, low, high = filt
+                            fieldInd = self.fieldIndex[var]
+                            dSpec = self.discSpecs[fieldInd]
+                            varMin = dSpec[1]
+                            varMax = dSpec[2]
+                            if low is None:
+                                low = varMin
+                            if high is None:
+                                high = varMax + .0001
+                            val = adat[fieldInd, i]
+                            if val < low or val >= high:
+                                include = False
+                                break
                 if not include:
                     remRecs.append(i)
             remaining = self.N - len(remRecs)
@@ -496,14 +562,30 @@ class ProbSpace:
             return self.expCache[cacheKey]
         if not givenSpecs:
             # Unconditional Expectation
-            indx = self.fieldIndex[target]
-            dat = self.aData[indx]
+            findx = self.fieldIndex[target]
+            dat = self.aData[findx]
             if len(dat) == 0:
                 # No data.  We can't know the expected value.  Return None.
                 result = 0
+            elif target in self.categoricalVars:
+                # For categoricals, the expected value is the mode.
+                vals, counts = np.unique(self.aData[findx], return_counts=True)
+                idx = np.where(counts == np.amax(counts))
+                # The result of where is an array inside a 1-tuple.  Not sure why
+                # the outer tuple.  We pick the first value with max-count.
+                result0 = float(vals[idx[0][0]])
+                # Got the most frequent numerical value.  Do we need to convert
+                # it to a category string?
+                if self.fieldTypes[findx] == 's':
+                    # String type.  Convert it.
+                    dict = self.stringMapR[target]
+                    result = dict[result0]
+                else:
+                    result = result0
             else:
-                # For all methods, this is the best unconditional expectation.
-                result = np.mean(self.aData[indx])
+                # For all methods, this is the best unconditional expectation
+                # for numeric data.
+                result = np.mean(self.aData[findx])
         else:
             if self.isDiscrete(target) or not self.specsAreContinuous(givenSpecs):
                 # If the target is discrete or any of the givens are discrete, we will
@@ -935,6 +1017,7 @@ class ProbSpace:
     def boundCondition(self, rvName, condSpecs):
         #print('***** Bound Condition')
         targIsDisc, discConds, contConds = self.analyzeQuery(rvName, condSpecs)
+        #('***** Bound Condition: ', targIsDisc, discConds, contConds)
         
         if targIsDisc:
             # Use only filtering if target is discrete.  We need a distribution for the
@@ -993,6 +1076,7 @@ class ProbSpace:
                 outPDF = filtSpace.distr(rvName)
             else:
                 outPDF = None
+        #print('outPdf: ', outPDF.N, outPDF.E(), outPDF.percentile(2.5), outPDF.percentile(97.5))
         return outPDF
 
     def reductionExponent(self, totalDepth):
@@ -1331,21 +1415,23 @@ class ProbSpace:
     def _isDiscreteVar(self, rvName):
         vals = self.ds[rvName]
         cardinality = len(set(vals))
-        if cardinality > MAX_DISCRETE_VALS:
+        if not vals or type(vals[0]) == type(''):
+            return True
+        if cardinality > MAX_DISCRETE_VALS or cardinality > sqrt(self.N):
             return False
-        isDiscrete = True
-        for val in vals:
-            if val != int(val):
-                isDiscrete = False
-                break
-        return isDiscrete
+        return True
     
     def _getDiscreteVars(self):
         discreteVars = []
         for var in self.fieldList:
-            if self._isDiscreteVar(var):
+            if var in self.categoricalVars or self._isDiscreteVar(var):
+                # Note: All categorical vars are discrete.
                 discreteVars.append(var)
         return discreteVars
+
+    def _getCategoricalVars(self):
+        catVars = []
+        return catVars
 
     def isDiscrete(self, rvName):
         indx = self.fieldIndex[rvName]

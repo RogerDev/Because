@@ -1,9 +1,10 @@
+import time
 from sys import argv
 from because.probability import prob
 from because.synth import gen_data, read_data
 from because.visualization import probPlot1D, probPlot2D_exp, probPlot2D, probPlot3D_exp, probPlot3D
 
-def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], gtype='pdf', probspace=None):
+def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], filtSpec=[], gtype='pdf', probspace=None, enhance=False):
     """
     Must specify either:
     - dataPath -- A .py SEM file for synthetic data or .csv for other data
@@ -34,6 +35,12 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], gtype='pdf', probsp
             ds = r.read()
         probspace = prob.ProbSpace(ds)
     # Should have probspace at this point.
+    # First filter it.
+    filtSpec = probspace.normalizeSpecs(filtSpec)
+    if len(filtSpec) > 0:
+        print('Viz.show: Filtering by: ', filtSpec)
+        probspace = probspace.SubSpace(filtSpec)
+        print('Viz.show: New N = ', probspace.N)
     targetSpec = probspace.normalizeSpecs(targetSpec)
     condSpec = probspace.normalizeSpecs(condSpec)
     dims = len(targetSpec) + len(condSpec)
@@ -56,12 +63,14 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], gtype='pdf', probsp
             graph = probPlot2D
         else:
             graph = probPlot3D
-    
-    graph.show(targetSpec=targetSpec, condSpec=condSpec, gtype=gtype, probspace=probspace)
+    if graph == probPlot2D or graph == probPlot3D_exp:
+        graph.show(targetSpec=targetSpec, condSpec=condSpec, gtype=gtype, probspace=probspace, enhance=enhance)
+    else:
+        graph.show(targetSpec=targetSpec, condSpec=condSpec, gtype=gtype, probspace=probspace)
 
 if __name__ == '__main__':
     if '-h' in argv or len(argv) < 4:
-        print('Usage: python because/visualization/viz.py dataPath targets conditions [numRecs] [cum]')
+        print('Usage: python because/visualization/viz.py dataPath targets conditions filters [numRecs] [cum]')
         print('  dataPath is the path to a .py (synthetic data) or .csv file')
         print('  targets is the variable(s) whose distribution to plot e.g., A, "A,B".')
         print('  conditions are the conditional variable name(s) e.g., B, "B,C".')
@@ -73,6 +82,7 @@ if __name__ == '__main__':
         dataPath = args[1].strip()
         targets = args[2].strip()
         conditions = args[3].strip()
+        filters = args[4].strip()
         tokens = targets.split(',')
         tSpec = []
         for token in tokens:
@@ -85,9 +95,13 @@ if __name__ == '__main__':
             varName = token.strip()
             if varName:
                 cSpec.append((varName,))
-        if len(args) > 4:
+        if filters:
+            filtSpec = eval(filters)
+        else:
+            filtSpec = []
+        if len(args) > 5:
             try:
-                numRecs = int(args[4].strip())
+                numRecs = int(args[5].strip())
             except:
                 pass
         gtype = 'pdf'
@@ -95,6 +109,10 @@ if __name__ == '__main__':
             gtype = 'cdf'
         if 'exp' in args:
             gtype = 'exp'
+        enhance = False
+        if 'enh' in args:
+            enhance = True
         
         #print('dims, datSize, numRecs = ', dims, datSize, numRecs)
-        show(dataPath=dataPath, numRecs=numRecs, targetSpec=tSpec, condSpec=cSpec, gtype=gtype)
+        show(dataPath=dataPath, numRecs=numRecs, targetSpec=tSpec, 
+            condSpec=cSpec, filtSpec=filtSpec, gtype=gtype, enhance=enhance)

@@ -20,20 +20,13 @@ from mpl_toolkits.mplot3d import Axes3D
 from because.synth import gen_data
 from because.probability.rkhs.rkhsMV import RKHS
 from because.visualization import grid
+from because.probability.prob import ProbSpace
 
 def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], gtype='pdf', probspace=None):
     assert len(targetSpec) == 1 and len(condSpec) == 1, 'probPlot2D_exp.show:  Must provide exactly one target and one condition.  Got: ' + str(targetSpec) + ', ' + str(condSpec)
     lim = 1
     dims = 2
-    if numRecs <= 1000:
-        numPts = 15
-    elif numRecs <= 10000:
-        numPts = 20
-    elif numRecs < 100000:
-        numPts = 25
-    else:
-        numPts = 30 # How many eval points for each conditional
-
+ 
     v1 = targetSpec[0][0]
     v2 = condSpec[0][0]
 
@@ -51,6 +44,16 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], gtype='pdf', probsp
         prob1 = ProbSpace(data, cMethod = 'd!')
     else:
         prob1 = probspace
+
+    numRecs = prob1.N
+    if numRecs <= 1000:
+        numPts = 15
+    elif numRecs <= 10000:
+        numPts = 20
+    elif numRecs < 100000:
+        numPts = 25
+    else:
+        numPts = 30 # How many eval points for each conditional
 
     print('Dimensions = ', dims, '.  Conditionals = ', dims - 1)
     print('Number of points to test for each conditional = ', numPts)
@@ -74,10 +77,15 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], gtype='pdf', probsp
     for tp in tps:
         bincr = incrs[0]
         bval = tp[0]
-        condspec = (cond, bval, bval + bincr)
+        if prob1.isDiscrete(cond):
+            condspec = (cond, bval)
+        else:
+            condspec = (cond, bval, bval + bincr)
         #print('bval, bincr = ', bval, bincr)
         ey_x = prob1.E(target, condspec)
         dist = prob1.distr(target, condspec)
+        if dist is None or dist.N < 2:
+            continue
         upper = dist.percentile(100-ptiles[0])
         lower = dist.percentile(ptiles[0])
         upper2 = dist.percentile(100-ptiles[1])
@@ -92,7 +100,7 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], gtype='pdf', probsp
         yt1_hh.append(upper2)
         yt1_ll.append(lower2)    
     dp_end = time.time()
-
+    print('Test Time = ', round(dp_end-dp_start, 3))
     fig = plt.figure()
 
 

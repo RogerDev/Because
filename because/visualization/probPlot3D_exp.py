@@ -22,7 +22,7 @@ from because.probability.prob import ProbSpace
 from because.probability.rkhs.rkhsMV import RKHS
 from because.visualization import grid
 
-def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], gtype='pdf', probspace=None):
+def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], gtype='pdf', probspace=None, enhance=False):
     assert len(targetSpec) == 1 and len(condSpec) == 2, 'probPlot3D_exp.show:  Must provide exactly one target and two conditions.  Got: ' + str(targetSpec) + ', ' + str(condSpec)
 
     power = 3
@@ -30,15 +30,6 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], gtype='pdf', probsp
     numPts = 30 # How many eval points for each conditional
     
     dims = 3
-
-    if numRecs <= 1000:
-        numPts = 15
-    elif numRecs <= 10000:
-        numPts = 20
-    elif numRecs < 100000:
-        numPts = 25
-    else:
-        numPts = 30 # How many eval points for each conditional
 
     if probspace is None:
         f = open(dataPath, 'r')
@@ -50,6 +41,17 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], gtype='pdf', probsp
         prob1 = ProbSpace(data, power=power)
     else:
         prob1 = probspace
+    
+    numRecs = prob1.N
+    if numRecs <= 1000:
+        numPts = 15
+    elif numRecs <= 10000:
+        numPts = 20
+    elif numRecs < 100000:
+        numPts = 25
+    else:
+        numPts = 30 # How many eval points for each conditional
+
     target = targetSpec[0][0]
     cond = [condSpec[0][0], condSpec[1][0]]
 
@@ -58,7 +60,9 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], gtype='pdf', probsp
     g = grid.Grid(prob1, cond, lim, numPts)
     tps = g.makeGrid()
     incrs = g.getIncrs()
- 
+    isDisc = [prob1.isDiscrete(v) for v in cond]
+    nTests = g.getTestCount()
+    print('nTests = ', nTests)
     xt1 = []
     yt1 = []
     zt1 = []
@@ -66,26 +70,35 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], gtype='pdf', probsp
     ssTot = 0 # Total sum of squares for R2 computation
     cmprs = []
     dp_est = []
+    dp_start = time.time()
     for t in tps:
         condspec = []
         for c in range(dims-1):
+            condIsDisc = isDisc[c]
             condVar = cond[c]
             val = t[c]
-            spec = (condVar, val, val+incrs[c])
+            if condIsDisc:
+                spec = (condVar, val)
+            else:
+                spec = (condVar, val, val+incrs[c])
             condspec.append(spec)
         y_x = prob1.E(target, condspec)
+        jp = prob1.P(condspec)
+        if enhance and jp < .1/nTests:
+            continue
         if y_x is None:
             continue
         xt1.append(t[0])
         yt1.append(t[1])
         zt1.append(y_x)
     dp_end = time.time()
+    print('Test Time = ', round(dp_end-dp_start, 3))
     fig = plt.figure(constrained_layout=True)
-    fig.suptitle('N=' + str(numRecs))
+    fig.suptitle('N=' + str(prob1.N))
     x = np.array(xt1)
     y = np.array(yt1)
     z = np.array(zt1)
-    my_cmap = plt.get_cmap('winter')
+    my_cmap = plt.get_cmap('plasma')
     ax = fig.add_subplot(111, projection='3d')
     ax.plot_trisurf(x, y, z, cmap = my_cmap)
     ax.set_xlabel(cond[0], fontweight='bold')

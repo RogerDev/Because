@@ -10,6 +10,7 @@ class Grid:
         incrs = [(maxvs[i] - minvs[i]) / (numPts-1) for i in range(dims)]
         vSpaces = []
         incrs = []
+        nTests = 1
         for i in range(dims):
             var = vars[i]
             if ps.isDiscrete(var):
@@ -18,10 +19,17 @@ class Grid:
             else:
                 vSpace = list(np.linspace(minvs[i], maxvs[i], numPts))
                 incrs.append(vSpace[1] - vSpace[0])
+            nTests *= len(vSpace)
             vSpaces.append(vSpace)
         self.dims = dims
         self.vSpaces = vSpaces
         self.incrs = incrs
+        self.nTests = nTests
+
+    def getTestCount(self, varNum=None):
+        if varNum is not None:
+            return len(self.vSpaces[varNum])
+        return self.nTests
 
     def getIncrs(self):
         return self.incrs

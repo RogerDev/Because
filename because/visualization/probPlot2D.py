@@ -25,7 +25,7 @@ from because.probability.prob import ProbSpace
 from because.probability.rkhs.rkhsMV import RKHS
 from because.visualization import grid
 
-def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], gtype='pdf', probspace=None):
+def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], gtype='pdf', probspace=None, enhance=True):
     assert len(targetSpec) == 1 and len(condSpec) == 1 or len(targetSpec) == 2 and len(condSpec) == 0, \
         'probPlot2D.show:  Must provide one target and one condition or two targets and no conditions.  Got: ' + str(targetSpec) + ', ' + str(condSpec)
 
@@ -35,14 +35,6 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], gtype='pdf', probsp
     if gtype == 'cdf':
         cumulative = True
 
-    if numRecs <= 1000:
-        numPts = 15
-    elif numRecs <= 10000:
-        numPts = 20
-    elif numRecs < 100000:
-        numPts = 25
-    else:
-        numPts = 30 # How many eval points for each conditional
     if probspace is None:
         # Generate the data
         f = open(dataPath, 'r')
@@ -59,6 +51,15 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], gtype='pdf', probsp
         prob1 = probspace
     
     N = prob1.N
+    numRecs = N
+    if numRecs <= 1000:
+        numPts = 15
+    elif numRecs <= 10000:
+        numPts = 20
+    elif numRecs < 100000:
+        numPts = 25
+    else:
+        numPts = 30 # How many eval points for each conditional
     targets = [spec[0] for spec in targetSpec]
     conds = [spec[0] for spec in condSpec]
     if len(targets) == 1:
@@ -76,7 +77,21 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], gtype='pdf', probsp
     xt1 = []
     yt1 = []
     zt1 = []
- 
+    nTests = g.getTestCount(0)
+    nTests_j = g.getTestCount()
+    threshFactor = .2
+    thresh = threshFactor / nTests
+    thresh_j = threshFactor / nTests_j
+    def enhanceResults(val):
+        if joint:
+            if val < thresh_j:
+                return 0
+            return tanh(val / (thresh_j * 5))
+        else:
+            if val < thresh:
+                return 0
+            return tanh(val / (thresh * 5))
+
     dp_start = time.time()
     for tp in tps:
         aval = tp[0]
@@ -104,7 +119,9 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], gtype='pdf', probsp
                 tSpec = [(targets[0], aval, aval + aincr), (targets[1], bval, bval + bincr)]
                 cSpec = []
             psy_x = prob1.P(tSpec, cSpec)
-        if psy_x is None:
+        if enhance:
+            psy_x = enhanceResults(psy_x)
+        if psy_x is None or psy_x == 0:
             continue
         if psy_x > 1:
             #print('got p > 1:  aval, bval = ', aval, bval, psy_x)
@@ -114,6 +131,8 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], gtype='pdf', probsp
         zt1.append(psy_x)    
     dp_end = time.time()
 
+    print('Test Time = ', round(dp_end-dp_start, 3))
+
     fig = plt.figure()
 
 
@@ -121,7 +140,7 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], gtype='pdf', probsp
     y = np.array(yt1)
     z = np.array(zt1)
 
-    my_cmap = plt.get_cmap('winter')
+    my_cmap = plt.get_cmap('plasma')
     ax = fig.add_subplot(111, projection='3d')
 
     v1Label = '$' + vars[0] + '$'

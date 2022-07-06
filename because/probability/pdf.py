@@ -1,3 +1,4 @@
+from email.errors import MissingHeaderBodySeparatorDefect
 import numpy as np
 from math import sqrt, log, e
 import copy
@@ -287,6 +288,38 @@ class PDF:
                 maxProb = prob
                 maxVal = self.binValue(i)
         return maxVal
+
+    def modality(self):
+        """
+        Return the number of modes of the disribution (e.g. uni-modal, bi-modal, n-modal)
+        """
+        minProb = .4 / self.binCount
+        #print('minProb = ', minProb)
+        thresh = 1.4
+        modes = 0
+        prevPeak = 0
+        prevTrough = 1
+        direction = 0
+        for i in range(self.binCount):
+            bin = self.bins[i]
+            prob = bin[3]
+            #print('prob, direction, prevPeak, prevTrough = ', prob, direction, prevPeak, prevTrough)
+            if prob > minProb:
+                if  direction >= 0:
+                    if prob > prevPeak:
+                        prevPeak = prob
+                        direction = 1
+                    elif prob < prevPeak / thresh:
+                        modes += 1
+                        direction = -1
+                        prevTrough = prob
+                elif direction < 0:
+                    if prob < prevTrough:
+                        prevTrough = prob
+                    if prob > prevTrough * thresh:
+                        direction = 1
+                        prevPeak = prob
+        return modes
 
     def percentile(self, ptile):
         #assert False, 'BinList = ' + str(self.bins)

@@ -68,8 +68,8 @@ class Reader():
                 try:
                     val = float(tokens[i])
                 except:
-                    print('Reader: bad field in column', i, ' = ', tokens[i])
-                    continue
+                    # Must be a string.  Let it go.
+                    val = tokens[i]
                 outFields.append(val)
             if len(outFields) == len(self.vars):
                 for i in range(len(self.vars)):
