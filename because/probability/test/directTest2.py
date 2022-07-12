@@ -1,6 +1,8 @@
 import sys
 from because.causality import rv, cGraph
 from because.synth import read_data
+from because.synth import gen_data
+import numpy as np
 
 from because.probability import independence
 
@@ -11,6 +13,9 @@ args = sys.argv
 if (len(args) > 1):
     test = args[1]
 test = 'C:/Users/91952/Because/because/probability/test/models/directTestDat.py'
+dataPoints = 100000
+runs = 1
+
 f = open(test, 'r')
 
 exec(f.read(), globals())
@@ -41,27 +46,6 @@ for var in model:
 
     gnodes.append(gnode)
 
-# For dat file, use the input file name with the .csv extension
-
-tokens = test.split('.')
-
-testFileRoot = str.join('.', tokens[:-1])
-
-datFileName = testFileRoot + '.csv'
-
-d = read_data.Reader(datFileName)
-
-data = d.read()
-
-g = cGraph(gnodes, data)
-
-g.printGraph()
-'''
-results = g.testAllDirections()
-for result in results:
-    print(result)
-'''
-
 edges = [
          ('N', 'N2'),
          ('N2', 'N'),
@@ -75,6 +59,8 @@ edges = [
          ('M4', 'M'),
          ('M', 'M5'),
          ('M5', 'M'),
+         ('M', 'M6'),
+         ('M6', 'M'),
          ('IVB', 'IVA'),
          ('IVA', 'IVB'),
          ('IVB', 'IVC'),
@@ -91,14 +77,38 @@ edges = [
          ('EXP5', 'EXP'),
          ('EXP2', 'EXP5'),
          ('EXP5', 'EXP2')
-]
+    ]
+n = len(edges)
+res = np.zeros((n, runs))
 
-results = g.testAllDirections(edges, power=2)
-#result = g.testAllDirections()
-for result in results:
-    print(result)
+for run in range(runs):
+    gen = gen_data.Gen(test)
+    dat = gen.getDataset(dataPoints)
+
+    g = cGraph(gnodes, dat)
+
+    results = g.testAllDirections(edges, power=2)
+
+    for i in range(n):
+        _, _, _, res[i, run] = results[i]
 
 #g.findExogenous()
+res = res.mean(axis=1)
+total_margin = 0
+correct = 0
+for i in range(n):
+    if i % 2 == 1:
+        print(edges[i-1])
+        print(f'forward: {res[i-1]}')
+        print(f'backward: {res[i]}')
+        print(f'margin: {res[i-1] - res[i]}')
+        total_margin += res[i-1] - res[i]
+        if res[i-1] - res[i] > 0.0002:
+            correct += 1
+
+print("--------------------------")
+print("--------------------------")
+print(f'Total Margin: {total_margin} | Correct: {correct}')
 
 end = time.time()
 
