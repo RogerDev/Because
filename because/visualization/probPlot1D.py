@@ -88,7 +88,12 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], gtype='pdf', probsp
             else:
                 py = d.P((None, t))
         else:
-            py = prob1.P((target, t, t+incr))
+            if prob1.isDiscrete(target):
+                tSpec = (target, t)
+            else:
+                tSpec = (target, t, t+incr)
+
+            py = prob1.P(tSpec)
             if py is None:
                 continue
             if py > 1:

@@ -45,6 +45,9 @@ class Reader():
         data = lines[1:]
         tokens = varNames[:-1].split(',')
         for varName in tokens:
+            # Get rid of any quotes
+            varName = varName.replace('"', '')
+            varName = varName.replace("'", "")
             self.vars.append(varName)
             self.varData[varName] = []
             self.varIndex[varName] = len(self.vars) - 1
@@ -65,11 +68,15 @@ class Reader():
                 line = line[:-1]
             tokens = line.split(',')
             for i in range(len(self.vars)):
+                # Remove any quotes.
+                val = tokens[i]
+                val = val.replace('"', '')
+                val = val.replace("'", "")
                 try:
-                    val = float(tokens[i])
+                    val = float(val)
                 except:
-                    # Must be a string.  Let it go.
-                    val = tokens[i]
+                    # Must be a string. Let it go as is.
+                    pass
                 outFields.append(val)
             if len(outFields) == len(self.vars):
                 for i in range(len(self.vars)):

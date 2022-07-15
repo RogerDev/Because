@@ -47,37 +47,34 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], controlFor=[], gtyp
 
     numRecs = prob1.N
     if numRecs <= 1000:
-        numPts = 25
+        numPts = 20
     elif numRecs <= 10000:
-        numPts = 30
+        numPts = 25
     elif numRecs < 100000:
-        numPts = 40
+        numPts = 30
     else:
-        numPts = 50 # How many eval points for each conditional
+        numPts = 35 # How many eval points for each conditional
 
     print('Dimensions = ', dims, '.  Conditionals = ', dims - 1)
     print('Number of points to test for each conditional = ', numPts)
     target = v1
     cond = v2 
 
-    vars = [target, cond]
     g = grid.Grid(prob1, [v2], lim, numPts)
     tps = g.makeGrid()
     incrs = g.getIncrs()
 
     xt1 = []
     yt1 = []
-    yt1_h = []
-    yt1_l = []
-    yt1_hh = []
-    yt1_ll = []
 
-    ptiles = [16, 2.5]
+    condIsString = prob1.isStringVal(cond)
+    
     dp_start = time.time()
     for tp in tps:
         bincr = incrs[0]
         bval = tp[0]
-        if prob1.isDiscrete(cond):
+        if condIsString:
+            bval = prob1.numToStr(cond, bval)
             condspec = (cond, bval)
         else:
             condspec = (cond, bval, bval + bincr)
@@ -85,60 +82,42 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], controlFor=[], gtyp
             condspec = [condspec] + controlFor
         #print('condspec = ', condspec)
         #print('bval, bincr = ', bval, bincr)
-        ey_x = prob1.E(target, condspec, power=power)
-        dist = prob1.distr(target, condspec, power=power)
-        if dist is None or dist.N < 2:
-            continue
-        upper = dist.percentile(100-ptiles[0])
-        lower = dist.percentile(ptiles[0])
-        upper2 = dist.percentile(100-ptiles[1])
-        lower2 = dist.percentile(ptiles[1])
+        py_x = prob1.P(targetSpec, condspec, power=power)
         #print('ey_x, upper, lower, upper2, lower2 = ', ey_x, upper, lower, upper2, lower2)
-        if ey_x is None:
-            continue
         xt1.append(bval)
-        yt1.append(ey_x)
-        yt1_h.append(upper)
-        yt1_l.append(lower)    
-        yt1_hh.append(upper2)
-        yt1_ll.append(lower2)    
+        yt1.append(py_x)
     dp_end = time.time()
     print('Test Time = ', round(dp_end-dp_start, 3))
     fig = plt.figure()
 
-
+    if condIsString:
+        xy = [(yt1[i], xt1[i]) for i in range(len(yt1))]
+        xy.sort()
+        xy.reverse()
+        xt1 = [item[1] for item in xy]
+        yt1 = [item[0] for item in xy]
+    
     x = np.array(xt1)
     y = np.array(yt1)
-    y_h = np.array(yt1_h)
-    y_l = np.array(yt1_l)
-    y_hh = np.array(yt1_hh)
-    y_ll = np.array(yt1_ll)
 
     my_cmap = plt.get_cmap('tab20')
     ax = fig.add_subplot(111)
     v2Label = '$' + v2 + '$'
-    v1Label = '$E( ' + v1 + ' | ' + v2 +' )$'
+    v1Label = '$P( ' + str(targetSpec) + ' | ' + v2 +' )$'
     gray = my_cmap.colors[15]
     dkgray = my_cmap.colors[14]
     blue = my_cmap.colors[0]
     yellow = my_cmap.colors[1]
     ax.set_ylabel(v1Label, fontweight='bold', rotation = 90)
     ax.set_xlabel(v2Label, fontweight='bold', rotation = 0)
-    ax.fill_between(x, y_hh, y_ll, color=gray, alpha=.3, linewidth=0)
-    ax.fill_between(x, y_h, y_l, color=gray, alpha=.2, linewidth=0)
-    ax.plot(x, y_hh, color=dkgray, alpha=.2, linewidth=.75)
-    ax.plot(x, y_ll, color=dkgray, alpha=.2, linewidth=.75)
-    ax.plot(x, y_h, color=dkgray, alpha=.2, linewidth=1)
-    ax.plot(x, y_l, color=dkgray, alpha=.2, linewidth=1)
     ax.plot(x, y, color=blue, linewidth=2)
-
     plt.show()
 
 
 
 if __name__ == '__main__':
     if '-h' in argv or len(argv) < 4:
-        print('Usage: python because/visualization/probPlot2D_exp.py dataPath targets condition [numRecs]')
+        print('Usage: python because/visualization/probPlot2D_bound.py dataPath targets condition [numRecs]')
         print('  dataPath is the path to a .py (synthetic data) or .csv file')
         print('  targets is the variable(s) whose distribution to plot.')
         print('  conditions are the conditional variable names.')

@@ -1,6 +1,6 @@
 from email.errors import MissingHeaderBodySeparatorDefect
 import numpy as np
-from math import sqrt, log, e
+from math import sqrt, log, e, ceil
 import copy
 
 from because.probability.rkhs import rkhsRFF
@@ -320,6 +320,28 @@ class PDF:
                         direction = 1
                         prevPeak = prob
         return modes
+
+    def truncation(self):
+        """
+        Determine whether a distributed is truncated (bounded) at either
+        or both (upper and lower) ends, and what those bounds are.
+        Returns (lowerBound, upperBound), where the bounds are specified
+        as a location, or None for unbounded.
+        """
+        bin0 = self.bins[0]
+        binN = self.bins[-1]
+        prob0 = bin0[3]
+        probN = binN[3]
+        if prob0 > .1 / self.binCount:
+            lower = int(self.minVal() * 100) / 100.0
+        else:
+            lower = None
+        print('bnN = ', binN, ', maxVal = ', self.maxVal())
+        if probN > .1 / self.binCount:
+            upper = ceil(self.maxVal() * 100) / 100.0
+        else:
+            upper = None
+        return (lower, upper)
 
     def percentile(self, ptile):
         #assert False, 'BinList = ' + str(self.bins)

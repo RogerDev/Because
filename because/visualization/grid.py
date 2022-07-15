@@ -14,9 +14,28 @@ class Grid:
         for i in range(dims):
             var = vars[i]
             if ps.isDiscrete(var):
-                vSpace = ps.getMidpoints(var)
-                incrs.append(1)
+                #print('var', var, 'is Discrete')
+                vSpace0 = ps.getMidpoints(var)
+                categorical = ps.isCategorical(var)
+                if not categorical:
+                    dist = distrs[i]
+                    minBin = dist.getBinForVal(minvs[i])
+                    maxBin = dist.getBinForVal(maxvs[i])
+                    vSpace0 = vSpace0[minBin:maxBin+1]
+                    reductAmount = max([1, divmod(len(vSpace0), numPts)[0]])
+                    #print('reductAmount = ', reductAmount)
+                    vSpace = []
+                    for i in range(len(vSpace0)):
+                        if i % reductAmount == 0:
+                            vSpace.append(vSpace0[i])
+                    incrs.append(reductAmount + 1)
+                else:
+                    vSpace = vSpace0
+                    incrs.append(1)
             else:
+                #print('var', var, 'not Discrete')
+                #bins = distrs[i].bins
+                #print('bins = ', len(bins), bins[:2])
                 vSpace = list(np.linspace(minvs[i], maxvs[i], numPts))
                 incrs.append(vSpace[1] - vSpace[0])
             nTests *= len(vSpace)

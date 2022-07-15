@@ -25,7 +25,7 @@ from because.probability.prob import ProbSpace
 from because.probability.rkhs.rkhsMV import RKHS
 from because.visualization import grid
 
-def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], gtype='pdf', probspace=None, enhance=True):
+def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], controlFor=[], gtype='pdf', probspace=None, enhance=True, power=1):
     assert len(targetSpec) == 1 and len(condSpec) == 1 or len(targetSpec) == 2 and len(condSpec) == 0, \
         'probPlot2D.show:  Must provide one target and one condition or two targets and no conditions.  Got: ' + str(targetSpec) + ', ' + str(condSpec)
 
@@ -49,6 +49,8 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], gtype='pdf', probsp
 
     else:
         prob1 = probspace
+    
+    print('Controlling for: ', controlFor, ', power = ', power)
     
     N = prob1.N
     numRecs = N
@@ -102,7 +104,8 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], gtype='pdf', probsp
             if not joint:
                 tSpec = [(targets[0],)]
                 cSpec = [(conds[0], None, bval)]
-                d = prob1.distr(tSpec, cSpec)
+                cSpec = cSpec + controlFor
+                d = prob1.distr(tSpec, cSpec, power=power)
                 if d is None:
                     psy_x = 0
                 else:
@@ -110,15 +113,23 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], gtype='pdf', probsp
             else:
                 tSpec = [(targets[0], None, aval), (targets[1], None, bval)]
                 cSpec = []
-                psy_x = prob1.P(tSpec)
+                cSpec = cSpec + controlFor
+                psy_x = prob1.P(tSpec, power=power)
         else:
             if not joint:
-                tSpec = [(targets[0], aval, aval + aincr)]
+
+                tSpec = (aval, aval + aincr)
                 cSpec = [(conds[0], bval, bval + bincr)]
+                cSpec = cSpec + controlFor
+                if controlFor:
+                    d = prob1.distr(targets[0], cSpec, power=power)
+                    psy_x = d.P(tSpec)
+                else:
+                    psy_x = prob1.P((targets[0],) + tSpec, cSpec, power=power)
             else:
                 tSpec = [(targets[0], aval, aval + aincr), (targets[1], bval, bval + bincr)]
                 cSpec = []
-            psy_x = prob1.P(tSpec, cSpec)
+                psy_x = prob1.P(tSpec, cSpec, power=power)
         if enhance:
             psy_x = enhanceResults(psy_x)
         if psy_x is None or psy_x == 0:

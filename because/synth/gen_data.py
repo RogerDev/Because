@@ -13,6 +13,7 @@ from math import *
 from numpy.random import *
 from sys import argv
 import random
+from because.synth.truncate import truncated
 
 # Tuning Parameters
 MIN_COEF = .1  # Minimum absolute value for coefficients

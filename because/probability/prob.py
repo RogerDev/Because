@@ -14,7 +14,7 @@ from because.probability.rcot.RCoT import RCoT
 
 DEBUG = False
 
-MAX_DISCRETE_VALS = 20
+MAX_DISCRETE_VALS = 1000
 
 class ProbSpace:
     def __init__(self, ds, categorical=[], density = 1.0, power=1, discSpecs = None, 
@@ -106,11 +106,20 @@ class ProbSpace:
                             self.categoricalVars.append(varName)
                     else:
                         self.fieldTypes.append('n')
+                        # Verify that all values are numeric
+                        for i in range(len(vals)):
+                            val = vals[i]
+                            try:
+                                val = float(val)
+                            except:
+                                print('Warning: ProbSpace: bad value in variable', varName, '. Value = ', repr(val), \
+                                    '.  Setting to zero.  This will likely affect data integrity.')
+                                vals[i] = 0.0
         # Convert to Numpy array
         npDat = []
         for field in self.fieldList:
-            npDat.append(ds[field])
-        self.aData = np.array(npDat)
+            npDat.append(self.ds[field])
+        self.aData = np.array(npDat, 'float64')
 
         self.N = self.aData.shape[1]
 
@@ -119,7 +128,7 @@ class ProbSpace:
         self.expCache = {} # Expectation cache
         self.rkhsCache = {} # RKHS Cache
         self._discreteVars = self._getDiscreteVars()
-        self.fieldAggs = self.getAgg(ds)
+        self.fieldAggs = self.getAgg()
         if self.N:
             if discSpecs:
                 self.discSpecs = self.fixupDiscSpecs(discSpecs)
@@ -133,7 +142,22 @@ class ProbSpace:
         self.parentProb = None
         # Parent Query is the query on the parents space that resulted in the subspace.
         self.parentQuery = None
-                    
+
+    def getValues(self, varName):
+        fieldInd = self.fieldIndex[varName]
+        isDisc = self.isDiscrete(varName)
+        if not isDisc:
+            return ['_many_']
+        fieldType = self.fieldTypes[fieldInd]
+        if fieldType == 's':
+            dict = self.stringMap[varName]
+            vals = list(dict.keys())
+        else:
+            vals = list(set(self.ds[varName]))
+        vals.sort()
+        return vals
+
+
     def convertToNumeric(self, varName, vals):
         unique = list(set(vals))
         unique.sort()
@@ -150,7 +174,7 @@ class ProbSpace:
             numVals.append(numVal)
         return numVals
 
-    def getAgg(self, ds):
+    def getAgg(self):
         aData = self.aData
         numObs = aData.shape[1]  # Number of observations
         if numObs > 0:
@@ -166,6 +190,16 @@ class ProbSpace:
                 outDict[fieldName] = aggs
         return outDict
 
+    def getNumValue(self, varName, strVal):
+        try:
+            dict = self.stringMap[varName]
+        except:
+            return 0
+        try:
+            numVal = dict[strVal]
+        except:
+            return 0
+        return numVal
 
     def calcDiscSpecs(self):
         discSpecs = []
@@ -241,6 +275,70 @@ class ProbSpace:
             for i in range(len(edges) - 1):
                 mids.append((edges[i] + edges[i+1]) / 2)
         return mids
+
+    # Unused
+    def pdfToProbArray(self, pdf):
+        vals = []
+        for bin in pdf:
+            prob = bin[3]
+            vals.append(prob)
+        outArray = np.array(vals)
+        return outArray
+
+    def fieldStats(self, field):
+        return self.fieldAggs[field]
+
+    def _isDiscreteVar(self, rvName):
+        vals = self.ds[rvName]
+        cardinality = len(set(vals))
+        if not vals or type(vals[0]) == type(''):
+            return True
+        #if cardinality > MAX_DISCRETE_VALS or cardinality > sqrt(self.N) * self.density:
+        if cardinality > MAX_DISCRETE_VALS:
+            return False
+        return True
+    
+    def _getDiscreteVars(self):
+        discreteVars = []
+        for var in self.fieldList:
+            if var in self.categoricalVars or self._isDiscreteVar(var):
+                # Note: All categorical vars are discrete.
+                discreteVars.append(var)
+        return discreteVars
+
+    def isDiscrete(self, rvName):
+        indx = self.fieldIndex[rvName]
+        dSpec = self.discSpecs[indx]
+        isDisc = dSpec[5]
+        return isDisc
+
+    def isCategorical(self, rvName):
+        return rvName in self.categoricalVars
+
+    def isStringVal(self, rvName):
+        return rvName in self.stringMap.keys()
+
+    def strToNum(self, rvName, strval):
+        if rvName in self.stringMap.keys():
+            dict = self.stringMap[rvName]
+            try:
+                numval = dict[strval]
+            except:
+                numval = None
+            return numval
+        else:
+            return None
+    
+    def numToStr(self, rvName, numval):
+        if rvName in self.stringMapR.keys():
+            dict = self.stringMapR[rvName]
+            try:
+                strval = dict[numval]
+            except:
+                strval = None
+            return strval
+        else:
+            return None
 
     # Not used
     def getBucketVals(self, field):
@@ -360,8 +458,9 @@ class ProbSpace:
                 for filt in filtSpec2:
                     var = filt[0]
                     if var in self.categoricalVars:
+                        filtVal1 = filt[1]
                         fieldInd = self.fieldIndex[var]
-                        if self.fieldTypes[fieldInd] == 's':
+                        if self.fieldTypes[fieldInd] == 's' and type(filtVal1) == type(''):
                             # Convert values from strings to numeric tags
                             dict = self.stringMap[var]
                             filtVals = [dict[val] for val in list(filt[1:])]
@@ -974,7 +1073,7 @@ class ProbSpace:
                     #probYgZ = filtSpace.distr(rvName, cf)
                     # Now we can compute probZ as ratio of the number of data points in the filtered distribution and the original
                     probZ = self.P(ss2.parentQuery)
-                    print('probZ = ', probZ, ', probYgZ.E() = ', probYgZ.E(), ', probYgZ.N = ', probYgZ.N, ', ss.N = ', ss.N, ', ss.query = ', ss.parentQuery, ', ss2.query = ', ss2.parentQuery)
+                    #print('probZ = ', probZ, ', probYgZ.E() = ', probYgZ.E(), ', probYgZ.N = ', probYgZ.N, ', ss.N = ', ss.N, ', ss.query = ', ss.parentQuery, ', ss2.query = ', ss2.parentQuery)
                     if probZ == 0:
                         # Zero probability -- don't bother accumulating
                         continue
@@ -1220,6 +1319,11 @@ class ProbSpace:
         Parameter num_f is the number of features for conditioning set, num_f2 is the number of features for
         non-conditioning set in 'rcot' method.
         """
+        if power is None:
+            power = self.power
+        givenSpecs = self.normalizeSpecs(givenSpecs)
+        if DEBUG:
+            print('ProbSpace.dependence: dependence(' , rv1, ', ', rv2, '|', givenSpecs , ')')
         if dMethod == "rcot":
             x = self.ds[rv1]
             y = self.ds[rv2]
@@ -1229,17 +1333,12 @@ class ProbSpace:
                 # Use 0.99 as threshold to determine whether a pair of variables are dependent
                 return (1-p[0]) ** log(0.5, 0.99)
             z = []
-            for rv in givenSpecs:
-                z.append(self.ds[rv])
+            for rv_tup in givenSpecs:
+                z.append(self.ds[rv_tup[0]])
             (Cxy_z, Sta, p) = RCoT(x, y, z, num_f=num_f, num_f2=num_f2, seed=seed)
             return (1-p[0]) ** log(0.5, 0.99)
             #return 1 - p[0]
 
-        if power is None:
-            power = self.power
-        givenSpecs = self.normalizeSpecs(givenSpecs)
-        if DEBUG:
-            print('ProbSpace.dependence: dependence(' , rv1, ', ', rv2, '|', givenSpecs , ')')
         # Get all the combinations of rv1, rv2, and any givens
         # Depending on power, we test more combinations.  If level >= 100, we test all combos
         # For level = 0, we just test the mean.  For 1, we test the mean + 2 more values.
@@ -1347,7 +1446,7 @@ class ProbSpace:
 
 
 
-    def independence(self, rv1, rv2, givenSpecs=None, power=None, seed=None, num_f=100, num_f2=5, dMethod='rcot'):
+    def independence(self, rv1, rv2, givenSpecs=[], power=None, seed=None, num_f=100, num_f2=5, dMethod='rcot'):
         """
             Calculate the independence between two variables, and an optional set of givens.
             This is a heuristic inversion
@@ -1363,7 +1462,7 @@ class ProbSpace:
         return ind
 
 
-    def isIndependent(self, rv1, rv2, givenSpecs=None, power=None, seed=None, num_f=100, num_f2=5, dMethod='rcot'):
+    def isIndependent(self, rv1, rv2, givenSpecs=[], power=None, seed=None, num_f=100, num_f2=5, dMethod='rcot'):
         """ Determines if two variables are independent, optionally given a set of givens.
             Returns True if independent, otherwise False
         """
@@ -1400,44 +1499,6 @@ class ProbSpace:
         else:
             jp = 0
         return jp
-
-    def pdfToProbArray(self, pdf):
-        vals = []
-        for bin in pdf:
-            prob = bin[3]
-            vals.append(prob)
-        outArray = np.array(vals)
-        return outArray
-
-    def fieldStats(self, field):
-        return self.fieldAggs[field]
-
-    def _isDiscreteVar(self, rvName):
-        vals = self.ds[rvName]
-        cardinality = len(set(vals))
-        if not vals or type(vals[0]) == type(''):
-            return True
-        if cardinality > MAX_DISCRETE_VALS or cardinality > sqrt(self.N):
-            return False
-        return True
-    
-    def _getDiscreteVars(self):
-        discreteVars = []
-        for var in self.fieldList:
-            if var in self.categoricalVars or self._isDiscreteVar(var):
-                # Note: All categorical vars are discrete.
-                discreteVars.append(var)
-        return discreteVars
-
-    def _getCategoricalVars(self):
-        catVars = []
-        return catVars
-
-    def isDiscrete(self, rvName):
-        indx = self.fieldIndex[rvName]
-        dSpec = self.discSpecs[indx]
-        isDisc = dSpec[5]
-        return isDisc
 
     def corrCoef(self, rv1, rv2):
         """Pearson Correlation Coefficient (rho)

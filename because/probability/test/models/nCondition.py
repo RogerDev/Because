@@ -26,9 +26,10 @@ varEquations = [
                 # Bimodal normal - logistic mixture
                 'C = normal(1.5,1) if choice([0,1,1]) else logistic(-.5, 2)',
                 # Bimodal logistic - normal mixture
-                'D = logistic(1,1) if choice([0,0, 1]) else normal(1.2,.75)',
+                'D = truncated("logistic(1,1) if choice([0,0, 1]) else normal(1.2,.75)", -2, 4)',
+                #'D = logistic(1,1) if choice([0,0, 1]) else normal(1.2,.75)',
                 # Half-normal distribution
-                'E = abs(normal(1,1))',
+                'E = truncated("abs(normal(1,1))", None,2)',
                 # Exponential distribution
                 'F = exponential() * .5',
                 'f1 = math.tanh(B)',
