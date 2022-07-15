@@ -35,8 +35,9 @@ class cGraph:
                     The value lists for all variables should be the same length (i.e. nObservations).
                     Defaults to {}.
     """
-    def __init__(self, rvList, data={}):
+    def __init__(self, rvList, data={}, power=1):
 
+        self.power = power
         self.g = networkx.DiGraph()
         self.rvDict = {}
         for rv in rvList:
@@ -65,7 +66,7 @@ class cGraph:
             else:
                 self.edgeDict[d] = [edge]
         # Create a probability space object for later use
-        self.prob = ProbSpace(self.data, power=1)
+        self.prob = ProbSpace(self.data, power=self.power)
         # Create a separate standardized probability space for independence testing.
         iData = {}
         for var in self.data.keys():
@@ -579,7 +580,7 @@ class cGraph:
         return confidence
 
 
-    def testDirection(self, x, y):
+    def testDirection(self, x, y, power=None, N_train=100000):
         """
         Test the implied directionality between two variables.
         rho > 0 implies forward direction (i.e. x -> y).
@@ -593,21 +594,26 @@ class cGraph:
         Returns:
             float: rho as described above.
         """
+        if power is None:
+            power = self.power
         cacheKey = (x,y)
         if cacheKey in self.dirCache:
             rho = self.dirCache[cacheKey]
         else:
             #rho = direction.test_direction(self.data[x], self.data[y])
             # Use standardized data
-            rho = direction.test_direction(self.iProb.ds[x], self.iProb.ds[y])
+            rho = direction.test_direction(self.iProb.ds[x], self.iProb.ds[y], power, N_train)
             # Add result to cache
             self.dirCache[cacheKey] = rho
             # Add reverse result to cache, with reversed rho
-            reverseKey = (y,x)
-            self.dirCache[reverseKey] = -rho
+            #reverseKey = (y,x)
+            #self.dirCache[reverseKey] = -rho
         return rho
 
-    def testAllDirections(self, edges=None):
+    def testAllDirections(self, edges=None, power=None, N_train=100000):
+        if power is None:
+            power = self.power
+
         epsilon = .0001
         if edges is None:
             edges = self.getEdges()
@@ -615,12 +621,13 @@ class cGraph:
         errors = 0
         for edge in edges:
             x, y = edge
-            rho = self.testDirection(x, y)
+            rho = self.testDirection(x, y, power, N_train)
             if rho > epsilon:
                 isError = False
             else:
                 isError = True
                 errors += 1
+            #print((isError, x, y, rho))
             results.append((isError, x, y, rho))
         return results
 
@@ -659,7 +666,10 @@ class cGraph:
             print('cGraph.causalOrder: Could not converge to a definite order.')
         return cOrder
 
-    def findExogenous(self, exclude=[], power=1):
+    def findExogenous(self, exclude=[], power=None, N_train=100000):
+        if power is None:
+            power = self.power
+
         rvList = self.rvList
         rvList.sort()
         accum = {}
@@ -675,7 +685,7 @@ class cGraph:
                 y = rvList[j]
                 if x == y or y in exclude:
                     continue
-                R = self.testDirection(x, y)
+                R = self.testDirection(x, y, power, N_train)
 
                 if R > 0:
                     leastCausal = y

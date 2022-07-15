@@ -1325,16 +1325,22 @@ class ProbSpace:
         if DEBUG:
             print('ProbSpace.dependence: dependence(' , rv1, ', ', rv2, '|', givenSpecs , ')')
         if dMethod == "rcot":
-            x = self.ds[rv1]
-            y = self.ds[rv2]
-            if givenSpecs == []:
+            givenSpecs = self.normalizeSpecs(givenSpecs)
+            givensU, givensB = self.separateSpecs(givenSpecs)
+            if givensB:
+                ss1 = self.getCondSpace(givensB, Dtarg=2)
+            else:
+                ss1 = self
+            x = ss1.ds[rv1]
+            y = ss1.ds[rv2]
+            if not givensU:
                 (p, Sta) = RCoT(x, y, num_f=num_f, num_f2=num_f2, seed=seed)
                 #return 1-p[0]
                 # Use 0.99 as threshold to determine whether a pair of variables are dependent
                 return (1-p[0]) ** log(0.5, 0.99)
             z = []
-            for rv_tup in givenSpecs:
-                z.append(self.ds[rv_tup[0]])
+            for rv in givensU:
+                z.append(ss1.ds[rv[0]])
             (Cxy_z, Sta, p) = RCoT(x, y, z, num_f=num_f, num_f2=num_f2, seed=seed)
             return (1-p[0]) ** log(0.5, 0.99)
             #return 1 - p[0]

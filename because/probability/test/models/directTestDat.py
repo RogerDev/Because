@@ -33,6 +33,8 @@ model =    [
             ('M2', ['M']),
             ('M3', ['M']),
             ('M4', ['M']),
+            ('M5', ['M']),
+            ('M6', ['M']),
             # IVs are an inverted V formation for testing conditional dependency
             # of continuous variables.
             ('IVB', []),
@@ -40,22 +42,30 @@ model =    [
             ('IVC', ['IVB']),
             # Exponential distribution
             ('EXP', []),
-            ('EXP2', ['EXP'])
+            ('EXP2', ['EXP']),
+            ('EXP3', ['EXP']),
+            ('EXP4', ['EXP', 'EXP2']),
+            ('EXP5', ['EXP', 'EXP2'])
 			]
 
 # Structural Equation Model for data generation
 varEquations = [
-                'N = logistic(0,1)',
-                'N2 = N + logistic(1,1)',
-                'N3 = 1 / N + logistic(1,1)',
-                'M = logistic(1,1)',
-                'M2 = M + logistic(1,1)',
+                'N = logistic(0, 1)',
+                'N2 = math.tanh(N) + logistic(0,0.1)',
+                'N3 = 1 / N + logistic(0,1)',
+                'M = logistic(0,1)',
+                'M2 = -M + logistic(1,1)',
                 'M3 = M ** 2 + logistic(1,1)',
-                'M4 = M ** 2 + logistic(3,3)',
-                'IVB = logistic(0,1)',
-                'IVA = IVB ** 3 + logistic(0, 1)',
+                'M4 = M ** 2 + logistic(5,abs(M))',
+                'M5 = M ** 3 + logistic(5,5)',
+                'M6 = (M + logistic(0, 1)) ** 3',
+                'IVB = normal(0,1)',
+                'IVA = -IVB  + normal(0, 1)',
                 'IVC = abs(IVB) ** 0.5 + logistic(0, 1)',
                 'EXP = exponential()',
-                'EXP2 = math.tanh(EXP) + exponential()',
-                't = t + 1'
+                'EXP2 = -math.tanh(EXP) + exponential()',
+                'EXP3 = EXP ** 2 + exponential()',
+                'EXP4 = EXP + abs(EXP2) ** 1.5 + logistic(0, 2)',
+                'EXP5 = math.tanh(EXP) * (abs(EXP2) ** 1.5) + logistic(0, 2)'
 		        ]
+
