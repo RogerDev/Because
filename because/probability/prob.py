@@ -234,13 +234,33 @@ class ProbSpace:
         return discSpecs
 
     def fixupDiscSpecs(self, discSpecs):
+        # Recompute the histograms
         outSpecs = []
         for i in range(len(discSpecs)):
             discSpec = discSpecs[i]
             bins, min, max, edges, hist, isDiscrete = discSpec
-            # Regenerate histogram.  The other data should use the original
-            newHist, newEdges = np.histogram(self.aData[i], bins, (min, max))
-            outSpecs.append((bins, min, max, edges, newHist, isDiscrete))
+            if isDiscrete:
+                field = self.aData[i]
+                vals, counts = np.unique(field, return_counts = True)
+                countDict = {}
+                for i in range(len(vals)):
+                    val = vals[i]
+                    count = counts[i]
+                    countDict[val] = count
+                outHist0 = []
+                for i in range(bins):
+                    edge = edges[i]
+                    try:
+                        count = countDict[edge]
+                    except:
+                        count = 0
+                    outHist0.append(count)
+                outHist = np.array(outHist0)
+                outSpecs.append((bins, min, max, edges, outHist, True))
+            else:
+                # Regenerate histogram.  The other data should use the original
+                newHist, newEdges = np.histogram(self.aData[i], bins, (min, max))
+                outSpecs.append((bins, min, max, edges, newHist, False))
         return outSpecs
 
     # Unused
@@ -553,12 +573,12 @@ class ProbSpace:
         val = (min + max) / 2
         return val
 
-    def makeHashkey(self, targetSpec, givenSpec):
+    def makeHashkey(self, targetSpec, givenSpec, power):
         if type(targetSpec) == type([]):
             targetSpec = tuple(targetSpec)
         if type(givenSpec) == type([]):
             givenSpec = tuple(givenSpec)
-        hashKey = (targetSpec, givenSpec)
+        hashKey = (targetSpec, givenSpec, power)
         return hashKey
 
     def normalizeSpecs(self, inSpecs):
@@ -656,7 +676,7 @@ class ProbSpace:
         assert len(targetSpecs) == 1, 'ProbSpace.E: target must be singular.  Got ' + str(targetSpecs)
         assert not self.specsAreBound(targetSpecs), 'ProbSpace.E: target must be unbound (i.e. a bare variable name or 1-tuple).  Got ' + str(targetSpecs)
         target = targetSpecs[0][0] # Single bare variable
-        cacheKey = self.makeHashkey(target, givenSpecs)
+        cacheKey = self.makeHashkey(target, givenSpecs, power)
         if cacheKey in self.expCache.keys():
             return self.expCache[cacheKey]
         if not givenSpecs:
@@ -925,22 +945,56 @@ class ProbSpace:
         if DEBUG:
             print('ProbSpace.P: P(' , targetSpecs, '|', givenSpecs , ')')
         assert self.specsAreBound(targetSpecs), 'ProbSpace.P: target must be bound (i.e. include a value or value range).  Got ' + str(targetSpecs)
-        cacheKey = self.makeHashkey(targetSpecs, givenSpecs)
+        cacheKey = self.makeHashkey(targetSpecs, givenSpecs, power)
         if cacheKey in self.probCache.keys():
             return self.probCache[cacheKey]
         if givenSpecs:
             # We have conditionals
-            assert self.specsAreBound(givenSpecs), 'ProbSpace.P: givens must be bound (i.e. include a value or value range). ' + \
-                                                    'Conditionalization not supported.  Got ' + str(targetSpecs)
-            ss = self.getCondSpace(givenSpecs, Dtarg=len(targetSpecs))
+            condSpecs, filtSpecs = self.separateSpecs(givenSpecs)
+            if not condSpecs:
+                # Straight (bound) conditioning
+                Dtarg = 1
+                ss = self.getCondSpace(filtSpecs)
+                result=0.0
+                if ss.N > 0:
+                    result = ss.P(targetSpecs)
+            else:
+                # Conditionalization and possibly conditioning as well.
+                # Conditionalize on all indicated variables. I.e.,
+                # SUM(P(filteredY | Z=z) * P(Z=z)) for all z in Z.
+                # First, we filter on the bound conditions (if any), then conditionalize on the reduced set
+                if filtSpecs:
+                    ss = self.getCondSpace(filtSpecs, Dtarg = len(condSpecs) + 1)
+                else:
+                    ss = self
+                result = 0.0
+                if ss.N > 0:
+                    condFiltSpecs = self.getCondSpecs(condSpecs, power=power, effN=ss.N)
+                    accum = 0.0
+                    allProbs = 0.0
+                    for cf in condFiltSpecs:
+                        # Create a new subspace filtered by both the bound and unbound conditions
+                        # Note that progressive filtering will be used for the unbound conditions.
+                        # probYgZ is P(Y | Z=z) e.g., P(Y | X=1, Z=z)
+                        p = ss.P(targetSpecs, cf)
+                        # If expectation is None it means we can't find any points, so we have no
+                        # knowledge of the expectation.  Skip.
+                        probZ = self.P(cf)
+                        #print('probZ = ', probZ, ', exp = ', exp,  ', ss.N = ', ss.N)
+                        if probZ == 0:
+                            # Zero probability -- don't bother accumulating
+                            continue
+                        accum += p * probZ
+                        allProbs += probZ
+                    result = accum / allProbs
         else:
             # Marginal probability
             ss = self
-        if ss.N > 0:
-            ss2 = ss.getCondSpace(targetSpecs)
-            result = ss2.N / ss.N
-        else:
-            result = 0
+            if ss.N > 0:
+                ss2 = ss.getCondSpace(targetSpecs)
+                result = ss2.N / ss.N
+            else:
+                result = 0
         self.probCache[cacheKey] = result
         if DEBUG:
             print('ProbSpace.P: P(' , targetSpecs, '|', givenSpecs , ')', ', result = ', result)
@@ -998,7 +1052,7 @@ class ProbSpace:
         rvName = targetSpecs[0][0]
         if DEBUG:
             print('ProbSpace.distr: P(' , rvName, '|', givenSpecs , ')')
-        cacheKey = self.makeHashkey(rvName, givenSpecs)
+        cacheKey = self.makeHashkey(rvName, givenSpecs, power)
         if cacheKey in self.probCache.keys():
             return self.probCache[cacheKey]
         isDiscrete = self.isDiscrete(rvName)
@@ -1063,7 +1117,7 @@ class ProbSpace:
                     # Create a new subspace filtered by both the bound and unbound conditions
                     # Note that progressive filtering will be used for the unbound conditions.
                     # probYgZ is P(Y | Z=z) e.g., P(Y | X=1, Z=z)
-                    ss2 = ss.SubSpace(cf, minPoints=minP, maxPoints=maxP, discSpecs=self.discSpecs, fixDistr=True)
+                    ss2 = ss.SubSpace(cf, minPoints=minP, maxPoints=maxP, discSpecs=ss.discSpecs, fixDistr=True)
                     #print('ss2.N, min, max = ', ss2.N, minP, maxP)
                     if ss2.N < 1:
                         continue
@@ -1219,6 +1273,7 @@ class ProbSpace:
             mean = distr.E()
             std = distr.stDev()
             stats[var] = (mean, std)
+        
         # Scale and center the raw test points.
         for spec in rawCS:
             outSpec = []
@@ -1227,6 +1282,7 @@ class ProbSpace:
                 varSpec = spec[s]
                 var = varSpec[0]
                 if self.isDiscrete(var):
+                    # Take the values verbatim for discrete vars
                     outSpec.append(varSpec)
                 else:
                     # Continuous.  Create small ranges based on delta
@@ -1249,9 +1305,29 @@ class ProbSpace:
             testVals = []
             isDiscrete = self.isDiscrete(rvName)
             if isDiscrete or power >= 100:
-                # If is Discrete, return all values
+                # If catagorical, return all values
+                # If discrete, return some discrete samples
                 # If power >= 100, return all bins.
-                testVals = self.getMidpoints(rvName)
+                if self.isCategorical(rvName) or power >= 100:
+                    testVals = self.getMidpoints(rvName)
+                else:
+                    allVals = self.getMidpoints(rvName)
+                    nSamples = 2 * power + 1
+                    nVals = len(allVals)
+                    if nVals <= nSamples:
+                        testVals = allVals
+                    else:
+                        # Let's try and reduct the number of values.
+                        reduction = int(nVals / nSamples)
+                        if reduction == 1:
+                            start = int((nVals - nSamples)/2)
+                            end = start + nSamples
+                            testVals = allVals[start:end]
+                        else:
+                            # Take every Nth value
+                            sampleIndxs = range(0, nVals, reduction)
+                            testVals = [allVals[i] for i in sampleIndxs]
+   
             else:
                 # If continuous, sample values at various distances from the mean
                 for tp in levelSpecs:

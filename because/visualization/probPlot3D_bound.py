@@ -22,7 +22,7 @@ from because.probability.prob import ProbSpace
 from because.probability.rkhs.rkhsMV import RKHS
 from because.visualization import grid
 
-def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], gtype='pdf', probspace=None, enhance=False):
+def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], controlFor=[], gtype='pdf', probspace=None, power=1, enhance=False):
     assert len(targetSpec) == 1 and len(condSpec) == 2, 'probPlot3D_bound.show:  Must provide exactly one target and two conditions.  Got: ' + str(targetSpec) + ', ' + str(condSpec)
 
     power = 3
@@ -61,7 +61,7 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], gtype='pdf', probsp
     g = grid.Grid(prob1, cond, lim, numPts)
     tps = g.makeGrid()
     incrs = g.getIncrs()
-    isDisc = [prob1.isDiscrete(v) for v in cond]
+    isCategorical = [prob1.isCategorical(v) for v in cond]
     nTests = g.getTestCount()
     print('nTests = ', nTests)
     xt1 = []
@@ -75,13 +75,17 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], gtype='pdf', probsp
     for t in tps:
         condspec = []
         for c in range(dims-1):
-            condIsDisc = isDisc[c]
+            condIsCat = isCategorical[c]
             condVar = cond[c]
             val = t[c]
-            spec = (condVar, val, val+incrs[c])
+            if condIsCat:
+                spec = (condVar, val)
+            else:
+                spec = (condVar, val, val+incrs[c])
             condspec.append(spec)
-        y_x = prob1.P(targetSpec, condspec)
-        jp = prob1.P(condspec)
+        condSpec += controlFor
+        y_x = prob1.P(targetSpec, condspec, power=power)
+        jp = prob1.P(condspec, power=power)
         if enhance and jp < .1/nTests:
             continue
         xt1.append(t[0])

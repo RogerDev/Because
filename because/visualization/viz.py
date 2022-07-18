@@ -49,7 +49,7 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], filtSpec=[], contro
     if len(filtSpec) > 0:
         print('Viz.show: Filtering by: ', filtSpec)
         probspace = probspace.SubSpace(filtSpec)
-        print('Viz.show: New N = ', probspace.N)
+        print('Viz.show: Filtered N = ', probspace.N)
     targetSpec = probspace.normalizeSpecs(targetSpec)
     condSpec = probspace.normalizeSpecs(condSpec)
     dims = len(targetSpec) + len(condSpec)
@@ -60,27 +60,35 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], filtSpec=[], contro
         assert len(condSpec) > 0 and len(condSpec) <= 2, 'Vis.show: Expectation graphs must specify 1 or 2 conditions.  Got: ' + str(len(condSpec))
         if dims == 2:
             graph = probPlot2D_exp
+            graphName = '2D Expected value plot with single condition'
         else:
             graph = probPlot3D_exp
+            graphName = '3D Expected value plot with two conditions'
     elif targetsAreBound:
         assert len(condSpec) == 1 or len(condSpec) == 2, 'Viz.show: Bound Targets must specify one or two conditionals.'
         if len(condSpec) == 1:
             graph = probPlot2D_bound
+            graphName = '2D Bound Probability plot with 1 conditional.'
         else:
             graph = probPlot3D_bound
+            graphName = '3D Bound Probability plot with 2 conditionals.'
     else:
         assert len(targetSpec) == 1 or len(condSpec) == 0, 'Viz.show: Currently only support multiple targets with zero conditions,' + \
                             ' or single target with one or two conditions.  Got: '+ \
                             str(len(targetSpec)) + ' targets and ' + str(len(condSpec)) + ' conditions.'
         if dims == 1:
             graph = probPlot1D
+            graphName = 'Univariate Probability Distribution plot.'
         elif dims == 2:
             graph = probPlot2D
+            graphName = '2-variable Probability Distribution plot.'
         else:
             graph = probPlot3D
-    if graph == probPlot3D_exp or graph == probPlot3D_bound:
+            graphName = '3-variable Probability Distribution plot.'
+    print('Viz.show: Showing graph = ', graphName, ', power = ', power)
+    if graph == probPlot3D_exp:
         graph.show(targetSpec=targetSpec, condSpec=condSpec, gtype=gtype, probspace=probspace, enhance=enhance)
-    elif graph == probPlot2D or graph == probPlot2D_exp or graph == probPlot2D_bound:
+    elif graph == probPlot2D or graph == probPlot2D_exp or graph == probPlot2D_bound or graph == probPlot3D_bound:
         if controlFor:
             print('Viz.show: Controlling for ', controlFor)
         graph.show(targetSpec=targetSpec, condSpec=condSpec, controlFor=controlFor, gtype=gtype, probspace=probspace, enhance=enhance, power=power)

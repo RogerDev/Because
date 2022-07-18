@@ -77,7 +77,7 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], controlFor=[], gtyp
     for tp in tps:
         bincr = incrs[0]
         bval = tp[0]
-        if prob1.isDiscrete(cond):
+        if prob1.isCategorical(cond):
             condspec = (cond, bval)
         else:
             condspec = (cond, bval, bval + bincr)
@@ -87,6 +87,7 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], controlFor=[], gtyp
         #print('bval, bincr = ', bval, bincr)
         ey_x = prob1.E(target, condspec, power=power)
         dist = prob1.distr(target, condspec, power=power)
+        #ey_x = dist.E()
         if dist is None or dist.N < 2:
             continue
         upper = dist.percentile(100-ptiles[0])
@@ -103,7 +104,7 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], controlFor=[], gtyp
         yt1_hh.append(upper2)
         yt1_ll.append(lower2)    
     dp_end = time.time()
-    print('Test Time = ', round(dp_end-dp_start, 3))
+    print('Elapsed Time = ', round(dp_end-dp_start, 3))
     fig = plt.figure()
 
 
