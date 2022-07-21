@@ -78,6 +78,8 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], controlFor=[], gtyp
         bincr = incrs[0]
         bval = tp[0]
         if prob1.isCategorical(cond):
+            if prob1.isStringVal(cond):
+                bval = prob1.numToStr(cond, bval)
             condspec = (cond, bval)
         else:
             condspec = (cond, bval, bval + bincr)
@@ -105,33 +107,49 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], controlFor=[], gtyp
         yt1_ll.append(lower2)    
     dp_end = time.time()
     print('Elapsed Time = ', round(dp_end-dp_start, 3))
-    fig = plt.figure()
+    fig = plt.figure(tight_layout = True)
 
-
+    def sortByExp(x, y, y_h, y_l, y_hh, y_ll):
+        allvar = [(y[i], x[i], y_h[i], y_l[i], y_hh[i], y_ll[i]) for i in range(len(x))]
+        allvar.sort()
+        allvar.reverse()
+        y = [tup[0] for tup in allvar]
+        x = [tup[1] for tup in allvar]
+        y_h = [tup[2] for tup in allvar]
+        y_l = [tup[3] for tup in allvar]
+        y_hh = [tup[4] for tup in allvar]
+        y_ll = [tup[5] for tup in allvar]
+        return (x, y, y_h, y_l, y_hh, y_ll)
     x = np.array(xt1)
     y = np.array(yt1)
     y_h = np.array(yt1_h)
     y_l = np.array(yt1_l)
     y_hh = np.array(yt1_hh)
     y_ll = np.array(yt1_ll)
+    if prob1.isCategorical(cond):
+        x, y, y_h, y_l, y_hh, y_ll = sortByExp(x, y, y_h, y_l, y_hh, y_ll)
 
     my_cmap = plt.get_cmap('tab20')
     ax = fig.add_subplot(111)
-    v2Label = '$' + v2 + '$'
-    v1Label = '$E( ' + v1 + ' | ' + v2 +' )$'
-    gray = my_cmap.colors[15]
-    dkgray = my_cmap.colors[14]
-    blue = my_cmap.colors[0]
-    yellow = my_cmap.colors[1]
+    v2Label = v2
+    v1Label = 'E( ' + v1 + ' | ' + v2 +' )'
+    linecolor = my_cmap.colors[0]
+
+    for s in ['top', 'bottom', 'left', 'right']:
+        ax.spines[s].set_linewidth(1.5)
     ax.set_ylabel(v1Label, fontweight='bold', rotation = 90)
     ax.set_xlabel(v2Label, fontweight='bold', rotation = 0)
-    ax.fill_between(x, y_hh, y_ll, color=gray, alpha=.3, linewidth=0)
-    ax.fill_between(x, y_h, y_l, color=gray, alpha=.2, linewidth=0)
-    ax.plot(x, y_hh, color=dkgray, alpha=.2, linewidth=.75)
-    ax.plot(x, y_ll, color=dkgray, alpha=.2, linewidth=.75)
-    ax.plot(x, y_h, color=dkgray, alpha=.2, linewidth=1)
-    ax.plot(x, y_l, color=dkgray, alpha=.2, linewidth=1)
-    ax.plot(x, y, color=blue, linewidth=2)
+    ax.fill_between(x, y_hh, y_ll, color=linecolor, alpha=.1, linewidth=0)
+    ax.fill_between(x, y_h, y_l, color=linecolor, alpha=.1, linewidth=0)
+    ax.plot(x, y_hh, color=linecolor, alpha=.3, linewidth=.75)
+    ax.plot(x, y_ll, color=linecolor, alpha=.3, linewidth=.75)
+    ax.plot(x, y_h, color=linecolor, alpha=.4, linewidth=1)
+    ax.plot(x, y_l, color=linecolor, alpha=.4, linewidth=1)
+    ax.plot(x, y, color=linecolor, linewidth=3)
+    plt.xlim([x[0], x[-1]])
+    plt.ylim([np.min(y_ll), np.max(y_hh) * 1.01])
+    plt.yticks(weight='bold')
+    plt.xticks(rotation = -45, weight='bold')
 
     plt.show()
 

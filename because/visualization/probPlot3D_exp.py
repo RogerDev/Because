@@ -22,7 +22,7 @@ from because.probability.prob import ProbSpace
 from because.probability.rkhs.rkhsMV import RKHS
 from because.visualization import grid
 
-def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], gtype='pdf', probspace=None, enhance=False):
+def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], controlFor=[], gtype='pdf', probspace=None, power=1, enhance=False):
     assert len(targetSpec) == 1 and len(condSpec) == 2, 'probPlot3D_exp.show:  Must provide exactly one target and two conditions.  Got: ' + str(targetSpec) + ', ' + str(condSpec)
 
     power = 3
@@ -77,16 +77,17 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], gtype='pdf', probsp
             condIsDisc = isDisc[c]
             condVar = cond[c]
             val = t[c]
-            if condIsDisc:
+            if prob1.isCategorical(condVar):
                 spec = (condVar, val)
             else:
                 spec = (condVar, val, val+incrs[c])
             condspec.append(spec)
-        y_x = prob1.E(target, condspec)
+        condspec2 = condspec + controlFor
+        y_x = prob1.E(target, condspec2, power=power)
         if type(y_x) == type(''):
             # If a string (categorical) value, map it to a number.
             y_x = prob1.getNumValue(target, y_x)
-        jp = prob1.P(condspec)
+        jp = prob1.P(condspec, power=power)
         if enhance and jp < .1/nTests:
             continue
         if y_x is None:
@@ -96,8 +97,22 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], gtype='pdf', probsp
         zt1.append(y_x)
     dp_end = time.time()
     print('Test Time = ', round(dp_end-dp_start, 3))
-    fig = plt.figure(constrained_layout=True)
-    fig.suptitle('N=' + str(prob1.N))
+    strMappings = 'String Value Mappings:\n'
+    hasStrMappings = False
+    smap = prob1.stringMap
+    for var in cond:
+        if prob1.isStringVal(var):
+            hasStrMappings = True
+            map = smap[var]
+            valTokens = []
+            for key in map.keys():
+                val = map[key]
+                valTokens.append(key + '=' + str(val))
+            valStr = ', '.join(valTokens)
+            strMappings += '     ' + var + ': ' + valStr + '\n'
+    if hasStrMappings:
+        print(strMappings)
+    fig = plt.figure(constrained_layout=False)
     x = np.array(xt1)
     y = np.array(yt1)
     z = np.array(zt1)

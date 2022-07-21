@@ -128,7 +128,7 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], controlFor=[], gtyp
                     psy_x = prob1.P((targets[0],) + tSpec, cSpec, power=power)
             else:
                 tSpec = [(targets[0], aval, aval + aincr), (targets[1], bval, bval + bincr)]
-                cSpec = []
+                cSpec = controlFor
                 psy_x = prob1.P(tSpec, cSpec, power=power)
         if enhance:
             psy_x = enhanceResults(psy_x)
@@ -143,6 +143,21 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], controlFor=[], gtyp
     dp_end = time.time()
 
     print('Test Time = ', round(dp_end-dp_start, 3))
+    strMappings = 'String Value Mappings:\n'
+    hasStrMappings = False
+    smap = prob1.stringMap
+    for var in targets + conds:
+        if prob1.isStringVal(var):
+            hasStrMappings = True
+            map = smap[var]
+            valTokens = []
+            for key in map.keys():
+                val = map[key]
+                valTokens.append(key + '=' + str(val))
+            valStr = ', '.join(valTokens)
+            strMappings += '     ' + var + ': ' + valStr + '\n'
+    if hasStrMappings:
+        print(strMappings)
 
     fig = plt.figure()
 

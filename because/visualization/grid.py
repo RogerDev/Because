@@ -22,7 +22,7 @@ class Grid:
                     minBin = dist.getBinForVal(minvs[i])
                     maxBin = dist.getBinForVal(maxvs[i])
                     vSpace0 = vSpace0[minBin:maxBin+1]
-                    reductAmount = max([1, divmod(len(vSpace0), numPts)[0]])
+                    reductAmount = max([1, int(len(vSpace0) /numPts)])
                     #print('reductAmount = ', reductAmount)
                     vSpace = []
                     for i in range(len(vSpace0)):

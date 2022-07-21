@@ -2,7 +2,7 @@ import time
 from sys import argv
 from because.probability import prob
 from because.synth import gen_data, read_data
-from because.visualization import probPlot1D, probPlot2D_exp, probPlot2D, probPlot3D_exp, probPlot3D, probPlot2D_bound, probPlot3D_bound
+from because.visualization import probPlot1D, probPlot2D_exp, probPlot2D, probPlot3D_exp, probPlot3D, probPlot2D_bound, probPlot3D_bound, probPlotAll
 
 def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], filtSpec=[], controlFor=[], gtype='pdf', probspace=None, enhance=False, power=1):
     """
@@ -17,7 +17,7 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], filtSpec=[], contro
     - 'exp' -- Expected Value
     """
     assert probspace is not None or dataPath, 'Viz.show:  Must specify either dataPath or probspace.'
-    valid_gtypes = ['exp', 'pdf', 'cdf']
+    valid_gtypes = ['exp', 'pdf', 'cdf', 'multi']
     assert gtype in valid_gtypes, 'Vizshow:  Invalid gtype provided.  Valid types are: ' + str(valid_gtypes) + '. Got: ' + str(gtype)
     tempSpec = []
     for targ in targetSpec:
@@ -28,6 +28,8 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], filtSpec=[], contro
     targetSpec = tempSpec
 
     targetsAreBound = max([len(targ) for targ in targetSpec]) > 1
+    assert not targetsAreBound or gtype != 'exp', 'Vis.show: Bound targets are incompatible with expectation (gtype=exp) graphs.'
+    assert not targetsAreBound or gtype != 'multi', 'Vis.show: Bound targets are incompatible with multi-variable (gtype=multi) graphs.'
     if probspace is None:
         # Got a .csv or .py file
         tokens = dataPath.split('.')
@@ -43,6 +45,7 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], filtSpec=[], contro
             r = read_data.Reader(dataPath)
             ds = r.read()
         probspace = prob.ProbSpace(ds)
+    
     # Should have probspace at this point.
     # First filter it.
     filtSpec = probspace.normalizeSpecs(filtSpec)
@@ -52,10 +55,15 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], filtSpec=[], contro
         print('Viz.show: Filtered N = ', probspace.N)
     targetSpec = probspace.normalizeSpecs(targetSpec)
     condSpec = probspace.normalizeSpecs(condSpec)
+    print('Viz.show: Target = ', targetSpec, ', Condition = ', condSpec)
     dims = len(targetSpec) + len(condSpec)
-    assert dims <= 3, 'Viz.show: Can only visualize up to three dimensions.  Got: ' + str(dims) + '.'
+    assert dims <= 3 or gtype == 'multi', 'Viz.show: Can only visualize up to three dimensions.  Got: ' + str(dims) + '.'
     valid_gtypes = ['exp', 'cum']
-    if gtype == 'exp':
+    if gtype == 'multi':
+        assert len(condSpec) == 0, 'Viz.show: Conditions cannot be used for multi-variable graphs (gtype=multi).'
+        graph = probPlotAll
+        graphName = 'Multi Variable PDF Plot'
+    elif gtype == 'exp':
         assert len(targetSpec) == 1, 'Viz.show: Only a single target is supported for Expectation graphs.  Got: ' + str(targetSpec)
         assert len(condSpec) > 0 and len(condSpec) <= 2, 'Vis.show: Expectation graphs must specify 1 or 2 conditions.  Got: ' + str(len(condSpec))
         if dims == 2:
@@ -86,9 +94,7 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], filtSpec=[], contro
             graph = probPlot3D
             graphName = '3-variable Probability Distribution plot.'
     print('Viz.show: Showing graph = ', graphName, ', power = ', power)
-    if graph == probPlot3D_exp:
-        graph.show(targetSpec=targetSpec, condSpec=condSpec, gtype=gtype, probspace=probspace, enhance=enhance)
-    elif graph == probPlot2D or graph == probPlot2D_exp or graph == probPlot2D_bound or graph == probPlot3D_bound:
+    if graph != probPlot1D and graph != probPlotAll:
         if controlFor:
             print('Viz.show: Controlling for ', controlFor)
         graph.show(targetSpec=targetSpec, condSpec=condSpec, controlFor=controlFor, gtype=gtype, probspace=probspace, enhance=enhance, power=power)
@@ -158,6 +164,8 @@ if __name__ == '__main__':
         enhance = False
         if 'enh' in args:
             enhance = True
+        if 'multi' in args:
+            gtype = 'multi'
         
         #print('dims, datSize, numRecs = ', dims, datSize, numRecs)
         show(dataPath=dataPath, numRecs=numRecs, targetSpec=tSpec, 

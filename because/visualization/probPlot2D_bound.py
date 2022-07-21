@@ -88,7 +88,7 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], controlFor=[], gtyp
         yt1.append(py_x)
     dp_end = time.time()
     print('Test Time = ', round(dp_end-dp_start, 3))
-    fig = plt.figure()
+    fig = plt.figure(tight_layout=True)
 
     if condIsString:
         xy = [(yt1[i], xt1[i]) for i in range(len(yt1))]
@@ -100,17 +100,27 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], controlFor=[], gtyp
     x = np.array(xt1)
     y = np.array(yt1)
 
+    
     my_cmap = plt.get_cmap('tab20')
     ax = fig.add_subplot(111)
-    v2Label = '$' + v2 + '$'
-    v1Label = '$P( ' + str(targetSpec) + ' | ' + v2 +' )$'
-    gray = my_cmap.colors[15]
-    dkgray = my_cmap.colors[14]
-    blue = my_cmap.colors[0]
-    yellow = my_cmap.colors[1]
-    ax.set_ylabel(v1Label, fontweight='bold', rotation = 90)
-    ax.set_xlabel(v2Label, fontweight='bold', rotation = 0)
-    ax.plot(x, y, color=blue, linewidth=2)
+    ax.grid(visible=False)
+    for s in ['top', 'bottom', 'left', 'right']:
+        ax.spines[s].set_linewidth(1.5)
+    v2Label = v2
+    v1Label = 'P( ' + str(targetSpec) + ' | ' + v2 +' )'
+    colors = my_cmap.colors
+    import random
+    colorInd = 0
+    linecolor = colors[colorInd]
+    #linecolor = (0,0,.4)
+    ax.set_ylabel(v1Label, fontsize='medium', fontweight='bold', rotation = 90)
+    ax.set_xlabel(v2Label, fontsize='large', fontweight='bold', rotation = 0)
+    ax.plot(x, y, color=linecolor, alpha=.8, linewidth=2)
+    ax.fill_between(x, y, 0, color=linecolor, alpha=.5)
+    plt.ylim([0, np.max(y) + .01])
+    plt.xlim([x[0], x[-1]])
+    plt.yticks(weight='bold')
+    plt.xticks(rotation = -45, weight='bold')
     plt.show()
 
 

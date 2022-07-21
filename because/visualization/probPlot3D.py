@@ -16,7 +16,7 @@ import numpy as np
 from matplotlib import cm
 import math
 
-def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], gtype='pdf', probspace=None):
+def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], controlFor=[], gtype='pdf', probspace=None, power=2, enhance=False):
     assert (len(targetSpec) == 1 and len(condSpec) == 2) or (len(targetSpec) == 3 and len(condSpec) == 0), \
         'probPlot3D.show:  Must provide one target and two conditions or three targets and no conditions.  Got: ' + str(targetSpec) + ', ' + str(condSpec)
     power = 2
@@ -56,27 +56,30 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], gtype='pdf', probsp
     tVars = [spec[0] for spec in targetSpec]
     cVars = [spec[0] for spec in condSpec]
     vars = tVars + cVars
-    g = grid.Grid(prob1, vars, lim, dimPoints)
+    g = grid.Grid(prob1, cVars, lim, dimPoints)
     tps = g.makeGrid()
     incrs = g.getIncrs()
+    numTests = g.getTestCount()
 
 
     xt = []
     yt = []
     zt = []
-    my_cmap = plt.get_cmap('gray')
-
-    tests = dimPoints**3 # Number of tests
+    xt2 = []
+    yt2 = []
+    zt2 = []
+    my_cmap = plt.get_cmap('tab20')
+    dotColor = my_cmap.colors[0]
 
     probs = []
     testNum = 1
+    aval = (vars[0],)
     for tp in tps:
-        aval = tp[0]
-        bval = tp[1]
-        cval = tp[2]
-        aincr = incrs[0]
-        bincr = incrs[1]
-        cincr = incrs[2]
+        #print('tp = ', tp)
+        bval = tp[0]
+        cval = tp[1]
+        bincr = incrs[0]
+        cincr = incrs[1]
         if joint:
             if cumulative:
                 targetSpec = [(vars[0], None, aval), (vars[1], None, bval), (vars[2], None, cval)]
@@ -85,26 +88,43 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], gtype='pdf', probsp
                                     (vars[2], cval, cval + cincr)]
             p = prob1.P(targetSpec)
             if p > 0:
-                print(testNum, '/', tests, ': p = ', p)
+                print(testNum, '/', numTests, ': p = ', p)
                 probs.append(p)
                 xt.append(bval)
                 yt.append(cval)
                 zt.append(aval)
             testNum += 1
         else:
+            # Conditional Probability P(v1 | v2, v3)
             if cumulative:
                 targetSpec = (vars[0], None, aval)
                 givensSpec = [(vars[1], None, bval), (vars[2], None, cval)]
             else:
-                targetSpec = (vars[0], aval, aval + aincr)
+                targetSpec = (vars[0],)
                 givensSpec = [(vars[1], bval, bval + bincr), (vars[2], cval, cval + cincr)]
-            p = prob1.P(targetSpec, givensSpec)
-            if p > .001 and p <= 1:
-                print(testNum, '/', tests, ': p = ', p)
-                probs.append(p)
-                xt.append(bval)
-                yt.append(cval)
-                zt.append(aval)
+            givensSpec2 = givensSpec + controlFor
+            d = prob1.distr(targetSpec, givensSpec2)
+            if d is None or d.N < 5:
+                continue
+            rangeVals = [.5, .8, .5]
+            ptiles = [16, 50, 84]
+            for i in range(len(ptiles)):
+                t = ptiles[i]
+                ptile = d.percentile(t)
+            #p = prob1.P(targetSpec, givensSpec2, power=power)
+            #if p > .15  and p <= 1:
+                #print(testNum, '/', numTests, ': p = ', p)
+                if t == 50:
+                    exp = d.E()
+                    xt2.append(bval)
+                    yt2.append(cval)
+                    zt2.append(ptile)
+                else:
+                    probs.append(rangeVals[i])
+                    xt.append(bval)
+                    yt.append(cval)
+                    zt.append(ptile)
+
             testNum += 1
     pltWidth = 200
     pltHeight = 150
@@ -113,7 +133,9 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], gtype='pdf', probsp
     x = np.array(xt)
     y = np.array(yt)
     z = np.array(zt)
-
+    x2 = np.array(xt2)
+    y2 = np.array(yt2)
+    z2 = np.array(zt2)
     v1Label = '$' + vars[0] + '$'
     v2Label = '$' + vars[1] + '$'
     v3Label = '$' + vars[2] + '$'
@@ -133,6 +155,7 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], gtype='pdf', probsp
     N = len(x)
 
     def rescale(inProbs):
+        #return inProbs
         minProb = min(inProbs)
         maxProb = max(inProbs)
         print('minProb, maxProb = ', minProb, maxProb)
@@ -145,15 +168,18 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], gtype='pdf', probsp
             outProb = (math.tanh((prob-.5) * 2) + 1) / 2
             outProbs.append(outProb)
         return outProbs
-    scaledProbs = rescale(probs)
+    scaledProbs = probs
     #print('minScaled, maxScaled = ', minScaled, maxScaled, scaledProbs[:1000])
 
     #colors = [my_cmap((1-prob))[:3] + (prob* 1,) for prob in scaledProbs]
     #colors = [(.5-prob/4, .5-prob/4, .7-prob/5) + (.2 + prob* .8,) for prob in scaledProbs]
-    colors = [my_cmap(1-prob) for prob in scaledProbs]
-    dotsize = np.array(scaledProbs) * (20000 / dimPoints)
-    dotsize = 2000 / dimPoints
-    ax.scatter(x, y, z, c=colors, edgecolors='none', marker='o', s=dotsize, linewidth=0)
+    #colors = [my_cmap(1-prob) for prob in scaledProbs]
+    #dotsize = np.array(scaledProbs) * (20000 / dimPoints)
+    cmap2 = plt.get_cmap('plasma')
+    dotsize = 1000 / dimPoints
+    dotsizes = np.array(probs) * dotsize
+    ax.scatter(x, y, z, c=dotColor, alpha=.5, edgecolors='none', marker='o', s=dotsizes, linewidth=0)
+    ax.plot_trisurf(x2, y2, z2, cmap = cmap2)
     #ax.set_xlim3d(v2min, v2max)
     #ax.set_ylim3d(v3min, v3max)
     #ax.set_zlim3d(v1min, v1max)

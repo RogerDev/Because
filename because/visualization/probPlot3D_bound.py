@@ -93,8 +93,22 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], controlFor=[], gtyp
         zt1.append(y_x)
     dp_end = time.time()
     print('Test Time = ', round(dp_end-dp_start, 3))
-    fig = plt.figure(constrained_layout=True)
-    fig.suptitle('N=' + str(prob1.N))
+    strMappings = 'String Value Mappings:\n'
+    hasStrMappings = False
+    smap = prob1.stringMap
+    for var in cond:
+        if prob1.isStringVal(var):
+            hasStrMappings = True
+            map = smap[var]
+            valTokens = []
+            for key in map.keys():
+                val = map[key]
+                valTokens.append(key + '=' + str(val))
+            valStr = ', '.join(valTokens)
+            strMappings += '     ' + var + ': ' + valStr + '\n'
+    if hasStrMappings:
+        print(strMappings)
+    fig = plt.figure(constrained_layout=False)
     x = np.array(xt1)
     y = np.array(yt1)
     z = np.array(zt1)

@@ -742,6 +742,8 @@ class ProbSpace:
                 #print('ss.N, min, max = ', ss.N, minP_Filt, maxP_Filt)
             else:
                 ss = self
+            if ss.N <= 2:
+                return None
             condFiltSpecs = self.getCondSpecs(condSpecs, power=power, effN=ss.N)
             accum = 0.0
             allProbs = 0.0
@@ -749,19 +751,22 @@ class ProbSpace:
                 # Create a new subspace filtered by both the bound and unbound conditions
                 # Note that progressive filtering will be used for the unbound conditions.
                 # probYgZ is P(Y | Z=z) e.g., P(Y | X=1, Z=z)
-                exp = ss.E(target, cf)
+                exp = ss.E(target, cf, power=power)
                 # If expectation is None it means we can't find any points, so we have no
                 # knowledge of the expectation.  Skip.
                 if exp is None:
                     continue
-                probZ = self.P(cf)
+                probZ = ss.P(cf, power=power)
                 #print('probZ = ', probZ, ', exp = ', exp,  ', ss.N = ', ss.N)
                 if probZ == 0:
                     # Zero probability -- don't bother accumulating
                     continue
                 accum += exp * probZ
                 allProbs += probZ
-            result = accum / allProbs
+            if allProbs > 0:
+                result = accum / allProbs
+            else:
+                result = None
         return result
 
     def Ejp(self, target, givenSpecs, power, smoothness=1.0):
@@ -979,7 +984,7 @@ class ProbSpace:
                         p = ss.P(targetSpecs, cf)
                         # If expectation is None it means we can't find any points, so we have no
                         # knowledge of the expectation.  Skip.
-                        probZ = self.P(cf)
+                        probZ = ss.P(cf)
                         #print('probZ = ', probZ, ', exp = ', exp,  ', ss.N = ', ss.N)
                         if probZ == 0:
                             # Zero probability -- don't bother accumulating
@@ -1126,7 +1131,7 @@ class ProbSpace:
                     probYgZ = ss2.distr(rvName)
                     #probYgZ = filtSpace.distr(rvName, cf)
                     # Now we can compute probZ as ratio of the number of data points in the filtered distribution and the original
-                    probZ = self.P(ss2.parentQuery)
+                    probZ = ss.P(ss2.parentQuery)
                     #print('probZ = ', probZ, ', probYgZ.E() = ', probYgZ.E(), ', probYgZ.N = ', probYgZ.N, ', ss.N = ', ss.N, ', ss.query = ', ss.parentQuery, ', ss2.query = ', ss2.parentQuery)
                     if probZ == 0:
                         # Zero probability -- don't bother accumulating
@@ -1135,18 +1140,21 @@ class ProbSpace:
                     accum += probs
                     allProbs += probZ
                     allPoints += ss2.N
-                accum = accum / allProbs
-                # Now we start with a pdf of the original variable to establish the ranges, and
-                # then replace the actual probabilities of each bin.  That way we maintain the
-                # original bin structure. 
-                template = self.distr(rvName)
-                outSpecs = []
-                for i in range(len(accum)):
-                    pdfBin = template.getBin(i)
-                    newprob = accum[i]
-                    newBin = pdfBin[:-1] + (newprob,)
-                    outSpecs.append(newBin)
-                outPDF = PDF(allPoints, outSpecs, isDiscrete = isDiscrete)
+                if allProbs > 0:
+                    accum = accum / allProbs
+                    # Now we start with a pdf of the original variable to establish the ranges, and
+                    # then replace the actual probabilities of each bin.  That way we maintain the
+                    # original bin structure. 
+                    template = self.distr(rvName)
+                    outSpecs = []
+                    for i in range(len(accum)):
+                        pdfBin = template.getBin(i)
+                        newprob = accum[i]
+                        newBin = pdfBin[:-1] + (newprob,)
+                        outSpecs.append(newBin)
+                    outPDF = PDF(allPoints, outSpecs, isDiscrete = isDiscrete)
+                else:
+                    outPDF = None
         self.distrCache[cacheKey] = outPDF
         return outPDF
 
@@ -1259,7 +1267,10 @@ class ProbSpace:
         """
         if effN is None:
             effN = self.N
-        delta = .3 / log(effN, 10)
+        if effN > 2:
+            delta = .3 / log(effN, 10)
+        else:
+            delta = .3
         if DEBUG:
             print('ProbSpace.getCondSpecs: delta = ', delta, ', effN = ', effN)
         #print('getCondSpecs: delta = ', delta, ', effN = ', effN)

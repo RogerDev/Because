@@ -72,6 +72,7 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], gtype='pdf', probsp
     tps = g.makeGrid()
     incrs = g.getIncrs()
     incr = incrs[0]
+    print('incr = ', incr)
     xt1 = []
     xt2 = []
     yt1 = []
@@ -88,10 +89,13 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], gtype='pdf', probsp
             else:
                 py = d.P((None, t))
         else:
-            if prob1.isDiscrete(target):
+            if prob1.isCategorical(target):
+                if prob1.isStringVal(target):
+                    t = prob1.numToStr(target, t)
                 tSpec = (target, t)
             else:
                 tSpec = (target, t, t+incr)
+                #print('tSpec = ', tSpec)
 
             py = prob1.P(tSpec)
             if py is None:
@@ -107,6 +111,12 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], gtype='pdf', probsp
 
     fig = plt.figure(tight_layout=True)
 
+    if prob1.isCategorical(target):
+        xy = [(yt1[i], xt1[i]) for i in range(len(yt1))]
+        xy.sort()
+        xy.reverse()
+        xt1 = [item[1] for item in xy]
+        yt1 = [item[0] for item in xy]
 
     x = np.array(xt1)
     y = np.array(yt1)
@@ -114,30 +124,36 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], gtype='pdf', probsp
     my_cmap = plt.get_cmap('tab20')
     ax = fig.add_subplot(111)
     if cumulative:
-        v1Label = '$P( 0 <= '  + v1 + ' < X )$'
+        v1Label = 'P( 0 <= '  + v1 + ' < X )'
     else:
-        v1Label = '$P(' + v1 + '=X)$'
-    v2Label = '$' + 'X' + '$'
+        v1Label = 'P(' + v1 + '=X)'
+    v2Label = 'X'
     colors = my_cmap.colors
-    blue = colors[0]
-    gray = colors[15]
-    dkgray = colors[14]
-    green = colors[5]
+    linecolor = colors[0]
+    green = (0,.6, 0)
     yellow = colors[17]
-    ax.set(title = "Mean = " + str(round(mean, 3)) + ', std = ' + str(round(std, 3)) + ', skew = ' + str(round(skew, 3)) + ', kurt = ' + str(round(kurt, 3)))
-    ax.set_ylabel(v1Label, fontweight='bold', rotation = 90)
-    ax.set_xlabel(v2Label, fontweight='bold', rotation = 0)
-    ax.axvspan(phh, pll, color=gray, alpha=.1)
-    ax.axvspan(ph, pl, color=gray, alpha=.1)
-    plt.axvline(x=ph, color=yellow, alpha=1, linewidth = 1)
-    plt.axvline(x=pl, color=yellow, alpha=1, linewidth = 1)
-    plt.axvline(x=phh, color=yellow, alpha=1, linewidth = .75)
-    plt.axvline(x=pll, color=yellow, alpha=1, linewidth = .75)
-    plt.axvline(x=mean, color=green, linewidth = 2)
-    ax.axvspan(phh, pll, color=gray, alpha=.2)
-    ax.axvspan(ph, pl, color=gray, alpha=.2)
-    ax.fill_between(x, y, 0, color=blue, alpha=.3)
-    ax.plot(x, y, color=blue, linewidth=2)
+    if not prob1.isCategorical(target):
+        ax.set(title = "Mean = " + str(round(mean, 3)) + ', std = ' + str(round(std, 3)) + ', skew = ' + str(round(skew, 3)) + ', kurt = ' + str(round(kurt, 3)))
+    for s in ['top', 'bottom', 'left', 'right']:
+        ax.spines[s].set_linewidth(1.5)
+    ax.set_ylabel(v1Label, fontsize='large',fontweight='bold', rotation = 90)
+    ax.set_xlabel(v2Label, fontsize='large', fontweight='bold', rotation = 0)
+    if not prob1.isCategorical(target):
+        ax.axvspan(phh, pll, color=linecolor, alpha=.1)
+        ax.axvspan(ph, pl, color=linecolor, alpha=.1)
+        plt.axvline(x=ph, color=yellow, alpha=1, linewidth = 1)
+        plt.axvline(x=pl, color=yellow, alpha=1, linewidth = 1)
+        plt.axvline(x=phh, color=yellow, alpha=1, linewidth = .75)
+        plt.axvline(x=pll, color=yellow, alpha=1, linewidth = .75)
+        plt.axvline(x=mean, color=green, linewidth = 2)
+        ax.axvspan(phh, pll, color=linecolor, alpha=.1)
+        ax.axvspan(ph, pl, color=linecolor, alpha=.1)
+    ax.fill_between(x, y, 0, color=linecolor, alpha=.6)
+    ax.plot(x, y, color=linecolor, alpha=1, linewidth=2)
+    plt.xlim([x[0], x[-1]])
+    plt.ylim([0, np.max(y) + .01])
+    plt.yticks(weight='bold')
+    plt.xticks(rotation = -45, weight='bold')
     plt.show()
 
 if __name__ == '__main__':
