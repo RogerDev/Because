@@ -117,7 +117,7 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], controlFor=[], gtyp
     ax.set_xlabel(v2Label, fontsize='large', fontweight='bold', rotation = 0)
     ax.plot(x, y, color=linecolor, alpha=.8, linewidth=2)
     ax.fill_between(x, y, 0, color=linecolor, alpha=.5)
-    plt.ylim([0, np.max(y) + .01])
+    plt.ylim([.9 * np.min(y), 1.1 * np.max(y)])
     plt.xlim([x[0], x[-1]])
     plt.yticks(weight='bold')
     plt.xticks(rotation = -45, weight='bold')

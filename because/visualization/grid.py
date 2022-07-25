@@ -7,7 +7,6 @@ class Grid:
         distrs = [ps.distr(c) for c in vars]
         minvs = [distr.percentile(lim) for distr in distrs]
         maxvs = [distr.percentile(100-lim) for distr in distrs]
-        incrs = [(maxvs[i] - minvs[i]) / (numPts-1) for i in range(dims)]
         vSpaces = []
         incrs = []
         nTests = 1
@@ -28,7 +27,7 @@ class Grid:
                     for i in range(len(vSpace0)):
                         if i % reductAmount == 0:
                             vSpace.append(vSpace0[i])
-                    incrs.append(reductAmount + 1)
+                    incrs.append(reductAmount)
                 else:
                     vSpace = vSpace0
                     incrs.append(1)

@@ -756,7 +756,7 @@ class ProbSpace:
                 # knowledge of the expectation.  Skip.
                 if exp is None:
                     continue
-                probZ = ss.P(cf, power=power)
+                probZ = self.P(cf, power=power)
                 #print('probZ = ', probZ, ', exp = ', exp,  ', ss.N = ', ss.N)
                 if probZ == 0:
                     # Zero probability -- don't bother accumulating
@@ -984,7 +984,7 @@ class ProbSpace:
                         p = ss.P(targetSpecs, cf)
                         # If expectation is None it means we can't find any points, so we have no
                         # knowledge of the expectation.  Skip.
-                        probZ = ss.P(cf)
+                        probZ = self.P(cf)
                         #print('probZ = ', probZ, ', exp = ', exp,  ', ss.N = ', ss.N)
                         if probZ == 0:
                             # Zero probability -- don't bother accumulating
@@ -1131,7 +1131,7 @@ class ProbSpace:
                     probYgZ = ss2.distr(rvName)
                     #probYgZ = filtSpace.distr(rvName, cf)
                     # Now we can compute probZ as ratio of the number of data points in the filtered distribution and the original
-                    probZ = ss.P(ss2.parentQuery)
+                    probZ = self.P(ss2.parentQuery)
                     #print('probZ = ', probZ, ', probYgZ.E() = ', probYgZ.E(), ', probYgZ.N = ', probYgZ.N, ', ss.N = ', ss.N, ', ss.query = ', ss.parentQuery, ', ss2.query = ', ss2.parentQuery)
                     if probZ == 0:
                         # Zero probability -- don't bother accumulating
@@ -1429,7 +1429,7 @@ class ProbSpace:
             for rv in givensU:
                 z.append(ss1.ds[rv[0]])
             (Cxy_z, Sta, p) = RCoT(x, y, z, num_f=num_f, num_f2=num_f2, seed=seed)
-            return (1-p[0]) ** log(0.5, 0.99)
+            return (1-p[0]) ** log(0.5, 0.9999)
             #return 1 - p[0]
 
         # Get all the combinations of rv1, rv2, and any givens
