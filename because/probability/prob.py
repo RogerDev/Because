@@ -2,7 +2,7 @@
 
 import numpy as np
 import math
-from math import log, sqrt
+from math import log, sqrt, ceil
 try:
     from because.probability import probCharts
 except:
@@ -11,6 +11,8 @@ from because.probability.pdf import PDF
 from because.probability import uprob
 from because.probability.rkhs import rkhsMV
 from because.probability.rcot.RCoT import RCoT
+from because.probability import direction
+from because.probability.standardiz import standardize
 
 DEBUG = False
 
@@ -127,6 +129,9 @@ class ProbSpace:
         self.distrCache = {} # Distribution cache
         self.expCache = {} # Expectation cache
         self.rkhsCache = {} # RKHS Cache
+        self.dirCache = {} # Direction Cache
+
+
         self._discreteVars = self._getDiscreteVars()
         self.fieldAggs = self.getAgg()
         if self.N:
@@ -142,6 +147,9 @@ class ProbSpace:
         self.parentProb = None
         # Parent Query is the query on the parents space that resulted in the subspace.
         self.parentQuery = None
+
+    def getVarNames(self):
+        return self.fieldList
 
     def getValues(self, varName):
         fieldInd = self.fieldIndex[varName]
@@ -1275,7 +1283,10 @@ class ProbSpace:
             print('ProbSpace.getCondSpecs: delta = ', delta, ', effN = ', effN)
         #print('getCondSpecs: delta = ', delta, ', effN = ', effN)
         condVars = [spec[0] for spec in condSpecs]
-        rawCS = self.getCondSpecs2(condVars, power = power)
+        testValList = self.getCondSpecs2(condVars, power = power)
+        # Get the minimum and maximum raw values for each variable
+
+        #print('rawCS = ', rawCS)
         outCS = []
         stats = {}
         # Prepopulate stats for each variable (mean, std)
@@ -1285,19 +1296,50 @@ class ProbSpace:
             std = distr.stDev()
             stats[var] = (mean, std)
         
+        def generateIndexCombos(testValList):
+            if len(testValList) == 1:
+                return [(indx,) for indx in range(len(testValList[0]))]
+            else:
+                outCombos = []
+                childTestVals = generateIndexCombos(testValList[1:])
+                testVals0 = testValList[0]
+                for i in range(len(testVals0)):
+                    outCombo = [(i,) + childTestVals[j] for j in range(len(childTestVals))]
+                    outCombos += outCombo
+                return outCombos
+        
+        combos = generateIndexCombos(testValList)
+        #print('combos = ', combos)
         # Scale and center the raw test points.
-        for spec in rawCS:
+        testCounts = [len(testValList[i]) for i in range(len(testValList))]
+        for i in range(len(combos)):
+            indexes = combos[i]
             outSpec = []
             # Adjust pseudo filters by the mean and std of the conditional
-            for s in range(len(spec)):
-                varSpec = spec[s]
-                var = varSpec[0]
+            for s in range(len(indexes)):
+                indx = indexes[s]
+                var = condVars[s]
+                val = testValList[s][indx]
                 if self.isDiscrete(var):
-                    # Take the values verbatim for discrete vars
-                    outSpec.append(varSpec)
+                    if self.isCategorical(var):
+                        # Take the values verbatim for categorical vars
+                        outSpec.append((var, val))
+                    else:
+                        # For discrete numeric vars, check the range betweeen values
+                        if indx == 0:
+                            # Take the first value from -inf to the next value
+                            outSpec.append((var, None, val))
+                        else:
+                            # Take the interval [spec[i-1], spec[i])
+                            prev = testValList[s][indx-1]
+                            if indx == len(testValList[s]) - 1:
+                                # If it's the last one, then include out to +inf
+                                outSpec.append((var, prev, None))
+                            else:
+                                outSpec.append((var, prev, val))
+                           
                 else:
                     # Continuous.  Create small ranges based on delta
-                    val = varSpec[1]
                     mean, std = stats[var]
                     # Mean + val +/- delta
                     varSpec = (var, mean + (val - delta) * std, mean + (val + delta) * std)
@@ -1306,6 +1348,7 @@ class ProbSpace:
             outCS.append(outSpec)
         #print('outCS = ', outCS)
         return outCS
+        # End of getCondSpecs
 
     def getCondSpecs2(self, condVars, power=2):
         """
@@ -1322,23 +1365,24 @@ class ProbSpace:
                 if self.isCategorical(rvName) or power >= 100:
                     testVals = self.getMidpoints(rvName)
                 else:
+                    # Discrete numeric.  Sample a range of values
                     allVals = self.getMidpoints(rvName)
                     nSamples = 2 * power + 1
                     nVals = len(allVals)
                     if nVals <= nSamples:
                         testVals = allVals
                     else:
-                        # Let's try and reduct the number of values.
+                        # Let's try and reduce the number of values.
                         reduction = int(nVals / nSamples)
-                        if reduction == 1:
-                            start = int((nVals - nSamples)/2)
-                            end = start + nSamples
-                            testVals = allVals[start:end]
-                        else:
-                            # Take every Nth value
-                            sampleIndxs = range(0, nVals, reduction)
-                            testVals = [allVals[i] for i in sampleIndxs]
-   
+                        # Take every Kth value, where K = reduction
+                        sampleIndxs = range(0, nVals, reduction)
+                        # Since the above sometimes loses the last value (when nVals is even),
+                        # we'll take the center nSamples out of the remaining values, but 
+                        # when the remaining values - nSamples is odd, we'll favor the later values.
+                        start = ceil((len(sampleIndxs) - nSamples) / 2)
+                        # Extract the nSamples center values.
+                        sampleIndxs = sampleIndxs[start : start + nSamples]
+                        testVals = [allVals[indx] for indx in sampleIndxs]                        
             else:
                 # If continuous, sample values at various distances from the mean
                 for tp in levelSpecs:
@@ -1357,26 +1401,49 @@ class ProbSpace:
             maxLevel = .5 + log(power, 10)
             #print('maxLevel = ', maxLevel)
             levelSpecs = [0] + list(np.arange(1/power*maxLevel, maxLevel + 1/power*maxLevel, 1/power*maxLevel))
-        #print('levelSpecs = ', levelSpecs)
-
+        testValList = []
         # Find values for each variable based on testPoints
         nVars = len(condVars)
-        rvName = condVars[0]
-        if nVars == 1:
+        for rvName in condVars:
             # Only one var to do.  Find the values.
-            vals = getTestVals(self, rvName, levelSpecs)
-            return [[(rvName, val)] for val in vals]
-        else:
-            # We're not on the last var, so recurse and build up the total set
-            accum = []
-            vals = getTestVals(self, rvName, levelSpecs)
-            childVals = self.getCondSpecs2(condVars[1:], power) # Recurse to get the child values
-            for val in vals:
-                accum += [[(rvName, val)] + childVal for childVal in childVals]
-            #print('accum = ', accum)
-            return accum
-        # End of getCondSpecs
+            testVals = getTestVals(self, rvName, levelSpecs)
+            testValList.append(testVals)
+        return testValList
+        # End of getCondSpecs2
         
+    def testDirection(self, rvA, rvB, power=None, N_train=100000):
+        """ When having power parameter less than or equal to 1,
+            test the causal direction between variables A and B
+            using one of the LiNGAM or GeNGAM pairwise algorithms.
+
+            When having power larger than 1, use non-linear method
+            to test the causal direction. N_train determines at most
+            how many samples would be used to train the non-linear
+            model. Currently test uses KNN algorithm.
+
+            Returns a number R.  A positive R indicates that the
+            causal path runs from A toward B.  A negative value
+            indicates a causal path from B towards A.  Values
+            close to zero (e.g. +/- 10**-5) means that causal
+            direction could not be determined.
+        """
+        if power is None:
+            power = self.power
+        cacheKey = (rvA, rvB, power)
+        if cacheKey in self.dirCache:
+            rho = self.dirCache[cacheKey]
+        else:
+            #rho = direction.test_direction(self.data[x], self.data[y])
+            # Use standardized data
+            standA = standardize(self.ds[rvA])
+            standB = standardize(self.ds[rvB])
+            rho = direction.test_direction(standA, standB, power, N_train)
+            # Add result to cache
+            self.dirCache[cacheKey] = rho
+            # Add reverse result to cache, with reversed rho
+            #reverseKey = (y,x)
+            #self.dirCache[reverseKey] = -rho
+        return rho
 
     def adjustSpec(self, spec, delta):
         outSpec = []

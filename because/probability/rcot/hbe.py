@@ -59,4 +59,4 @@ def hbe(coeff,x):
     return p_chisqnu_vec
 
 ans = hbe(np.array([1.5, 1.5, 0.5, 0.5]), 10.203)
-print("hbe: ",ans)
+#print("hbe: ",ans)

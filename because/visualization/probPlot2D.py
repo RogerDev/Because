@@ -117,15 +117,21 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], controlFor=[], gtyp
                 psy_x = prob1.P(tSpec, power=power)
         else:
             if not joint:
-
-                tSpec = (aval, aval + aincr)
-                cSpec = [(conds[0], bval, bval + bincr)]
+                if prob1.isCategorical(targets[0]):
+                    tSpec = (aval,)
+                else:
+                    tSpec = (aval, aval + aincr)
+                if prob1.isCategorical(conds[0]):
+                    cSpec = [(conds[0], bval)]
+                else:
+                    cSpec = [(conds[0], bval, bval + bincr)]
                 cSpec = cSpec + controlFor
                 if controlFor:
                     d = prob1.distr(targets[0], cSpec, power=power)
                     psy_x = d.P(tSpec)
                 else:
                     psy_x = prob1.P((targets[0],) + tSpec, cSpec, power=power)
+                #print('psy_x = ', psy_x, ', tSpec, cSpec = ', tSpec, cSpec)
             else:
                 tSpec = [(targets[0], aval, aval + aincr), (targets[1], bval, bval + bincr)]
                 cSpec = controlFor
