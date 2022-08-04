@@ -11,6 +11,8 @@ from because.probability.pdf import PDF
 from because.probability import uprob
 from because.probability.rkhs import rkhsMV
 from because.probability.rcot.RCoT import RCoT
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.ensemble import RandomForestClassifier
 
 DEBUG = False
 
@@ -127,6 +129,7 @@ class ProbSpace:
         self.distrCache = {} # Distribution cache
         self.expCache = {} # Expectation cache
         self.rkhsCache = {} # RKHS Cache
+        self.mlmodelCache = {}  # MLmodel Cache
         self._discreteVars = self._getDiscreteVars()
         self.fieldAggs = self.getAgg()
         if self.N:
@@ -660,6 +663,10 @@ class ProbSpace:
                 - U-Prob ('u') -- Hybrid of D-Prob and J-Prob.  This is generally more accurate than D-Prob
                                     but not as accurate as J-Prob when dimensionality is high or data is scarce.
                                     Performance is comparable to D-Prob. Continuous data only.
+                - ML-Prob ('ml') -- Using Machine Learning algorithm to regress on the target variable. Currently,
+                                    we use Random Forest, which shows the best performance. The parameter power will
+                                    determine how many trees we will use, ranging from 20 to 200 corresponding to power
+                                    from 1 to 10.
             - smoothness (range: (0, 2]) -- Applies only to J-Prob or U-Prob. Determines the smoothness of the
                                     kernel used.  Lower values can be used to increase precision for complex
                                     distributions with sufficient data.  Higher values provide a smoother
@@ -709,19 +716,93 @@ class ProbSpace:
             if self.isDiscrete(target) or not self.specsAreContinuous(givenSpecs):
                 # If the target is discrete or any of the givens are discrete, we will
                 # need to use D-Prob.
-                cMethod = 'd'
+                if not (self.isCategorical(target) and cMethod == 'ml'):
+                    cMethod = 'd'
             if cMethod[0] == 'd':  # d or d!
                 #print('***** Discrete -- D-Prob')
                 result = self.Edisc(target, givenSpecs, power)
             elif cMethod == 'u':  #uprob
                 #print('***** U-Prob')
                 result = self.Eup(target, givenSpecs, power, smoothness=smoothness)
-            else:
+            elif cMethod == 'j':
                 #print('***** J-Prob')
                 result = self.Ejp(target, givenSpecs, power, smoothness=smoothness)
+            elif len(givenSpecs) > 1 or self.isCategorical(target):
+                result = self.Eml(target, givenSpecs, power)
+            else:
+                result = self.Edisc(target, givenSpecs, power)
         self.expCache[cacheKey] = result
         if DEBUG:
             print('ProbSpace.E: E(' , targetSpecs, '|', givenSpecs , '), Result = ', result)
+        return result
+
+    def Eml(self, target, givenSpecs, power):
+        condSpecs, filtSpecs = self.separateSpecs(givenSpecs)
+        if not condSpecs:
+            # Straight (bound) conditioning
+            filtVars = [filtSpec[0] for filtSpec in filtSpecs]
+            filtVals = []
+            for filtSpec in filtSpecs:
+                if len(filtSpec) == 2:
+                    filtVals.append(filtSpec[1])
+                else:
+                    filtVals.append((filtSpec[1] + filtSpec[2]) / 2.0)
+            # Try to get rkhs from cache.  Otherwise create it.
+            cacheKey = (target, tuple(filtVars))
+            if cacheKey in self.mlmodelCache.keys():
+                reg = self.mlmodelCache[cacheKey]
+            else:
+                n_estimators = power * 20
+                if self.isCategorical(target):
+                    reg = RandomForestClassifier(n_estimators=n_estimators)
+                else:
+                    reg = RandomForestRegressor(n_estimators=n_estimators)
+                y = np.array(self.ds[target])
+                X = np.array([self.ds[filtVar] for filtVar in filtVars]).transpose()
+                reg.fit(X, y)
+                self.mlmodelCache[cacheKey] = reg
+            result = reg.predict(np.array(filtVals).reshape(1, -1))[0]
+        else:
+            # Conditionalization and possibly conditioning as well.
+            # Conditionalize on all indicated variables. I.e.,
+            # SUM(P(filteredY | Z=z) * P(Z=z)) for all z in Z
+            condFiltSpecs = self.getCondSpecs(condSpecs, power=power)
+            accum = 0.0
+            allProbs = 0.0
+            condVars = [spec[0] for spec in filtSpecs] + [spec[0] for spec in condFiltSpecs[0]]
+            # Try to get rkhs from cache.  Otherwise create it.
+            cacheKey = (target, tuple(condVars))
+            if cacheKey in self.mlmodelCache.keys():
+                reg = self.mlmodelCache[cacheKey]
+            else:
+                n_estimators = power * 20
+                if self.isCategorical(target):
+                    reg = RandomForestClassifier(n_estimators=n_estimators)
+                else:
+                    reg = RandomForestRegressor(n_estimators=n_estimators)
+                y = np.array(self.ds[target])
+                X = np.array([self.ds[condVar] for condVar in condVars]).transpose()
+                reg.fit(X, y)
+                self.mlmodelCache[cacheKey] = reg
+            for cf in condFiltSpecs:
+                specs = filtSpecs + cf
+                condVals = []
+                for spec in specs:
+                    if len(spec) == 2:
+                        condVals.append(spec[1])
+                    else:
+                        condVals.append((spec[1] + spec[2]) / 2.0)
+                exp = reg.predict(np.array(condVals).reshape(1, -1))[0]
+                if exp is None:
+                    continue
+                probZ = self.P(cf)
+                #print('probZ = ', probZ, ', exp = ', exp, condVals)
+                if probZ == 0:
+                    # Zero probability -- don't bother accumulating
+                    continue
+                accum += exp * probZ
+                allProbs += probZ
+            result = accum / allProbs
         return result
 
     def Edisc(self, target, givenSpecs, power):
@@ -1395,7 +1476,8 @@ class ProbSpace:
         #print('old = ', spec, ', new =', outSpec, ', delta = ', deltaAdjust)
         return outSpec
 
-    def dependence(self, rv1, rv2, givenSpecs=[], power=None, raw=False, seed=None, num_f=100, num_f2=5, dMethod='rcot'):
+    def dependence(self, rv1, rv2, givenSpecs=[], power=None, raw=False, seed=None, num_f=100, num_f2=5, sensitivity=None,
+                   dMethod='rcot'):
         """
         givens is [given1, given2, ... , givenN]
 
@@ -1406,31 +1488,35 @@ class ProbSpace:
         Parameter num_f is the number of features for conditioning set, num_f2 is the number of features for
         non-conditioning set in 'rcot' method.
         """
-        if power is None:
-            power = self.power
-        givenSpecs = self.normalizeSpecs(givenSpecs)
-        if DEBUG:
-            print('ProbSpace.dependence: dependence(' , rv1, ', ', rv2, '|', givenSpecs , ')')
         if dMethod == "rcot":
             givenSpecs = self.normalizeSpecs(givenSpecs)
             givensU, givensB = self.separateSpecs(givenSpecs)
+
             if givensB:
                 ss1 = self.getCondSpace(givensB, Dtarg=2)
             else:
                 ss1 = self
             x = ss1.ds[rv1]
             y = ss1.ds[rv2]
+
             if not givensU:
                 (p, Sta) = RCoT(x, y, num_f=num_f, num_f2=num_f2, seed=seed)
-                #return 1-p[0]
+            else:
+                z = []
+                for rv in givensU:
+                    z.append(ss1.ds[rv[0]])
+                (Cxy_z, Sta, p) = RCoT(x, y, z, num_f=num_f, num_f2=num_f2, seed=seed)
+
+            if sensitivity is None:
                 # Use 0.99 as threshold to determine whether a pair of variables are dependent
-                return (1-p[0]) ** log(0.5, 0.99)
-            z = []
-            for rv in givensU:
-                z.append(ss1.ds[rv[0]])
-            (Cxy_z, Sta, p) = RCoT(x, y, z, num_f=num_f, num_f2=num_f2, seed=seed)
-            return (1-p[0]) ** log(0.5, 0.9999)
-            #return 1 - p[0]
+                return (1 - p[0]) ** log(0.5, 0.99)
+            else:
+                assert 1 <= sensitivity <= 10, "sensitivity should be from range [1, 10]"
+                threshold = 11 - sensitivity
+                if Sta <= threshold:
+                    return 0.5 - math.tanh(threshold - Sta / num_f2 ** 2) / 2
+                else:
+                    return 0.5 + math.tanh(Sta / num_f2 ** 2 - threshold) / 2
 
         # Get all the combinations of rv1, rv2, and any givens
         # Depending on power, we test more combinations.  If level >= 100, we test all combos
@@ -1539,7 +1625,8 @@ class ProbSpace:
 
 
 
-    def independence(self, rv1, rv2, givenSpecs=[], power=None, seed=None, num_f=100, num_f2=5, dMethod='rcot'):
+    def independence(self, rv1, rv2, givenSpecs=[], power=None, seed=None, num_f=100, num_f2=5, sensitivity=None,
+                     dMethod='rcot'):
         """
             Calculate the independence between two variables, and an optional set of givens.
             This is a heuristic inversion
@@ -1550,17 +1637,18 @@ class ProbSpace:
             TO DO: Calibrate to an exact p-value.
         """
         dep = self.dependence(rv1, rv2, givenSpecs=givenSpecs, power=power, seed=seed, num_f=num_f, num_f2=num_f2,
-                              dMethod=dMethod)
+                              sensitivity=sensitivity, dMethod=dMethod)
         ind = 1 - dep
         return ind
 
 
-    def isIndependent(self, rv1, rv2, givenSpecs=[], power=None, seed=None, num_f=100, num_f2=5, dMethod='rcot'):
+    def isIndependent(self, rv1, rv2, givenSpecs=[], power=None, seed=None, num_f=100, num_f2=5, sensitivity=None,
+                      dMethod='rcot'):
         """ Determines if two variables are independent, optionally given a set of givens.
             Returns True if independent, otherwise False
         """
         ind = self.independence(rv1, rv2, givenSpecs = givenSpecs, power = power, seed=seed, num_f=num_f, num_f2=num_f2,
-                              dMethod=dMethod)
+                              sensitivity=sensitivity, dMethod=dMethod)
         # Use .5 (50% confidence as threshold.
         return ind > .5
 
