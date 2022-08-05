@@ -12,9 +12,10 @@ args = sys.argv
 
 if (len(args) > 1):
     test = args[1]
-test = 'C:/Users/91952/Because/because/probability/test/models/directTestDat.py'
-dataPoints = 100000
-runs = 1
+test = 'models/directTestDat.py'
+dataPoints = 10000
+runs = 10
+sensitivity = 1
 
 f = open(test, 'r')
 
@@ -87,7 +88,7 @@ for run in range(runs):
 
     g = cGraph(gnodes, dat)
 
-    results = g.testAllDirections(edges, power=2)
+    results = g.testAllDirections(edges, power=2, sensitivity=sensitivity)
 
     for i in range(n):
         _, _, _, res[i, run] = results[i]

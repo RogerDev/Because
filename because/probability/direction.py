@@ -13,7 +13,7 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.neural_network import MLPRegressor
 from sklearn.neighbors import KNeighborsRegressor
 
-def test_direction(rvA, rvB, power=1, N_train=100000):
+def test_direction(rvA, rvB, power=1, N_train=100000, sensitivity=None):
     """ When having power parameter less than or equal to 1,
         test the causal direction between variables A and B
         using one of the LiNGAM or GeNGAM pairwise algorithms.
@@ -45,12 +45,12 @@ def test_direction(rvA, rvB, power=1, N_train=100000):
         R = rho * avg
         return R
     else:
-        AtoB = non_linear_direct_test(rvA, rvB, N_train)
-        BtoA = non_linear_direct_test(rvB, rvA, N_train)
+        AtoB = non_linear_direct_test(rvA, rvB, N_train, sensitivity=sensitivity)
+        BtoA = non_linear_direct_test(rvB, rvA, N_train, sensitivity=sensitivity)
         R = AtoB - BtoA
         return R/1000
 
-def non_linear_direct_test(A, B, N_train=100000):
+def non_linear_direct_test(A, B, N_train=100000, sensitivity=None):
 
     s1 = np.array(A).reshape(-1, 1)
     s2 = np.array(B)
@@ -70,5 +70,19 @@ def non_linear_direct_test(A, B, N_train=100000):
     reg.fit(s1, s2)
 
     residual = s2 - reg.predict(s1)
-    (p, Sta) = RCoT(A, residual)
-    return p[0]
+
+    num_f2 = 5
+    (p, Sta) = RCoT(A, residual, num_f2=num_f2)
+
+    if sensitivity is None:
+        # Use 0.99 as threshold to determine whether a pair of variables are dependent
+        result = (1 - p[0]) ** math.log(0.5, 0.99)
+    else:
+        assert 1 <= sensitivity <= 10, "sensitivity should be from range [1, 10]"
+        threshold = 11 - sensitivity
+        if Sta <= threshold:
+            result = 0.5 - math.tanh(threshold - Sta / num_f2 ** 2) / 2
+        else:
+            result = 0.5 + math.tanh(Sta / num_f2 ** 2 - threshold) / 2
+
+    return 1 - result

@@ -38,7 +38,7 @@ def run(dims, datSize, tries=1, lim=3, quiet=False):
         print('Dimensions = ', dims, '.  Conditionals = ', dims - 1)
         print('Number of points to evaluate = ', numTests)
 
-    test = 'models/nCondition.py'
+    test = 'models/nCondition2.py'
 
     f = open(test, 'r')
     exec(f.read(), globals())
@@ -50,12 +50,8 @@ def run(dims, datSize, tries=1, lim=3, quiet=False):
     testFileRoot = str.join('.',tokens[:-1])
     datFileName = testFileRoot + '.csv'
     dp_results = []
-    jp_results = []
-    up_results = []
     ml_results = []
     dp_run = []
-    jp_run = []
-    up_run = []
     ml_run = []
     for i in range(tries):
         if not quiet:
@@ -64,10 +60,8 @@ def run(dims, datSize, tries=1, lim=3, quiet=False):
         sdg = gen.generate(datSize)
         d = read_data.Reader(datFileName, quiet=quiet)
         data = d.read()
-        prob1 = ProbSpace(data, cMethod = 'd') # D-Prob
-        prob2 = ProbSpace(data, cMethod = 'j') # J-Prob
-        prob3 = ProbSpace(data, cMethod = 'u') # U-Prob
-        prob4 = ProbSpace(data, cMethod = 'ml')  # ML-Prob
+        prob1 = ProbSpace(data, categorical=['A2', 'A3', 'A4', 'A5', 'A6'], cMethod = 'd') # D-Prob
+        prob4 = ProbSpace(data, categorical=['A2', 'A3', 'A4', 'A5', 'A6'], cMethod = 'ml')  # ML-Prob
 
         N = prob1.N
         vars = prob1.fieldList
@@ -113,15 +107,16 @@ def run(dims, datSize, tries=1, lim=3, quiet=False):
         ml_est = []
         # Generate the target values for comparison
         for t in tps:
-            cmpr1 = tanh(t[0] + 1)
-            cmpr2 = sin(t[1] * .75) if dims > 2 else 0
-            cmpr3 = tanh(t[2] - 2) if dims > 3 else 0
-            # print('t[3] = ', t[3])
-            cmpr4 = cos(t[3] * 1.2) if dims > 4 else 0
-            cmpr5 = tanh(t[4] + 3) if dims > 5 else 0
+            cmpr1 = 5*tanh(t[0]+1)
+            cmpr2 = sin(t[1]*.75) if dims > 2 else 0
+            cmpr3 = tanh(t[2]-2) if dims > 3 else 0
+            #print('t[3] = ', t[3])
+            cmpr4 = cos(t[3]*1.2) if dims > 4 else 0
+            cmpr5 = tanh(t[4]+3) if dims > 5 else 0
             cmprL = [cmpr1, cmpr2, cmpr3, cmpr4, cmpr5]
             cmpr = sum(cmprL[:dims - 1])
-            cmprs.append(cmpr)
+            label = 0 if cmpr < -0.5 else 1 if -0.5 <= cmpr < 0 else 2 if 0 <= cmpr < 0.5 else 3
+            cmprs.append(label)
         dp_start = time.time()
         for t in tps:
             try:
@@ -138,42 +133,6 @@ def run(dims, datSize, tries=1, lim=3, quiet=False):
             dp_est.append(y_x)
         prob1 = None
         dp_end = time.time()
-        jp_start = time.time()
-        tnum = 0
-        for t in tps:
-            tnum += 1
-            try:
-                condspec = []
-                for c in range(dims-1):
-                    condVar = cond[c]
-                    val = t[c]
-                    spec = (condVar, val)
-                    condspec.append(spec)
-                y_x = prob2.E(target, condspec)
-            except:
-                print('got exception -- JP')
-                y_x = 0
-            jp_est.append(y_x)
-        prob2 = None
-        jp_end = time.time()
-        up_start = time.time()
-        for t in tps:
-            try:
-                condspec = []
-                for c in range(dims-1):
-                    condVar = cond[c]
-                    val = t[c]
-                    spec = (condVar, val)
-                    condspec.append(spec)
-                y_x = prob3.E(target, condspec)
-                if y_x is None:
-                    y_x = 0
-            except:
-                print('got exception -- UP')
-                y_x = 0
-            up_est.append(y_x)
-        prob3 = None
-        up_end = time.time()
         ml_start = time.time()
         for t in tps:
             try:
@@ -190,87 +149,47 @@ def run(dims, datSize, tries=1, lim=3, quiet=False):
             ml_est.append(y_x)
         prob4 = None
         ml_end = time.time()
-        totalErr_dp = 0.0
-        totalErr_jp = 0.0
-        totalErr_up = 0.0
-        totalErr_ml = 0.0
+        correct_dp = 0.0
+        correct_ml = 0.0
         results = []
-        ysum = 0.0
         for i in range(len(cmprs)):
             t = tps[i]
             cmpr = cmprs[i]
-            ysum += cmpr
             dp_e = dp_est[i]
-            jp_e = jp_est[i]
-            up_e = up_est[i]
             ml_e = ml_est[i]
-            error2_dp = (cmpr-dp_e)**2
-            error2_jp = (cmpr-jp_e)**2
-            error2_up = (cmpr-up_e)**2
-            error2_ml = (cmpr-ml_e) ** 2
-            totalErr_dp += error2_dp
-            totalErr_jp += error2_jp
-            totalErr_up += error2_up
-            totalErr_ml += error2_ml
-            results.append((t, dp_e, jp_e, up_e, ml_e, cmpr, error2_dp, error2_jp, error2_up, error2_ml))
-        rmse_dp = sqrt(totalErr_dp) / len(tps)
-        rmse_jp = sqrt(totalErr_jp) / len(tps)
-        rmse_up = sqrt(totalErr_up) / len(tps)
-        rmse_ml = sqrt(totalErr_ml) / len(tps)
-        # Calc R2 for each
-        yavg = ysum / len(tps)
-        ssTot = sum([(c - yavg)**2 for c in cmprs])
-        R2_dp = max([1 - totalErr_dp / ssTot, 0.0])
-        R2_jp = max([1 - totalErr_jp / ssTot, 0.0])
-        R2_up = max([1 - totalErr_up / ssTot, 0.0])
-        R2_ml = max([1 - totalErr_ml / ssTot, 0.0])
+            correct_dp += cmpr == dp_e
+            correct_ml += cmpr == ml_e
+            results.append((t, dp_e, ml_e, cmpr, cmpr == dp_e, cmpr == ml_e))
+
+        Acc_dp = correct_dp / numTests
+        Acc_ml = correct_ml / numTests
         if not quiet:
             print('DP:')
-            print('   R2 =', R2_dp)
-            print('JP:')
-            print('   R2 =', R2_jp)
-            print('UP:')
-            print('   R2 =', R2_up)
+            print('   Acc =', Acc_dp)
             print('ML:')
-            print('   R2 =', R2_ml)
+            print('   Acc =', Acc_ml)
         dp_runtime = round(dp_end - dp_start, 5)
-        jp_runtime = round((jp_end - jp_start), 5)
-        up_runtime = round(up_end - up_start, 5)
         ml_runtime = round(ml_end - ml_start, 5)
-        dp_results.append(R2_dp)
-        jp_results.append(R2_jp)
-        up_results.append(R2_up)
-        ml_results.append(R2_ml)
+        dp_results.append(Acc_dp)
+        ml_results.append(Acc_ml)
         dp_run.append(dp_runtime)
-        jp_run.append(jp_runtime)
-        up_run.append(up_runtime)
         ml_run.append(ml_runtime)
     dp_avg = round(np.mean(dp_results),3)
-    jp_avg = round(np.mean(jp_results),3)
-    up_avg = round(np.mean(up_results),3)
     ml_avg = round(np.mean(ml_results), 3)
     dp_min = round(np.min(dp_results),3)
-    jp_min = round(np.min(jp_results),3)
-    up_min = round(np.min(up_results),3)
     ml_min = round(np.min(ml_results), 3)
     dp_max = round(np.max(dp_results),3)
-    jp_max = round(np.max(jp_results),3)
-    up_max = round(np.max(up_results),3)
     ml_max = round(np.max(ml_results), 3)
     dp_std = round(np.std(dp_results),3)
-    jp_std = round(np.std(jp_results),3)
-    up_std = round(np.std(up_results),3)
     ml_std = round(np.std(ml_results), 3)
     dp_runt = round(np.mean(dp_run),3)
-    jp_runt = round(np.mean(jp_run),3)
-    up_runt = round(np.mean(up_run),3)
     ml_runt = round(np.mean(ml_run), 3)
     print('dims, datSize, tries = ', dims, datSize, tries)
-    print('Average R2: DP, JP, UP, ML = ', dp_avg, jp_avg, up_avg, ml_avg)
-    print('Min R2: DP, JP, UP, ML = ', dp_min, jp_min, up_min, ml_min)
-    print('Max R2: DP, JP, UP, ML = ', dp_max, jp_max, up_max, ml_max)
-    print('Std R2: DP, JP, UP, ML = ', dp_std, jp_std, up_std, ml_std)
-    print('Runtimes: DP, JP, UP, ML = ', dp_runt, jp_runt, up_runt, ml_runt)
+    print('Average R2: DP, JP, UP, ML = ', dp_avg, ml_avg)
+    print('Min R2: DP, JP, UP, ML = ', dp_min, ml_min)
+    print('Max R2: DP, JP, UP, ML = ', dp_max, ml_max)
+    print('Std R2: DP, JP, UP, ML = ', dp_std, ml_std)
+    print('Runtimes: DP, JP, UP, ML = ', dp_runt, ml_runt)
     print('NumTests = ', tries)
     print('Uprob: tau = ', uprob.tau, ', minTau = ', uprob.mintau)
     lmbda, Dfilter, Ntarg = uprob.calcParms(None, datSize, dims)
@@ -278,11 +197,11 @@ def run(dims, datSize, tries=1, lim=3, quiet=False):
     print('Uprob: Lambda = ', lmbda)
     print('Uprob: DFilter =', Dfilter, 'Ntarg =', Ntarg)
     print('*************************************', flush=True)
-    return (datSize, dims, tries, dp_avg, jp_avg, up_avg, ml_avg, dp_runt, jp_runt, up_runt, ml_runt)
+    return (datSize, dims, tries, dp_avg, ml_avg, dp_runt, ml_runt)
 
 if __name__ == '__main__':
     tries = 10
-    datSize = 2000
+    datSize = 10000
     lim = 3
     if '-h' in sys.argv:
         print('\nUsage: python because/probability/test/cprobEval.py [dims] [datSize] [tries]')
@@ -295,7 +214,7 @@ if __name__ == '__main__':
         if len(sys.argv) > 1:
             dims = int(sys.argv[1])
         else:
-            dims = 2
+            dims = 6
         if len(sys.argv) > 2:
             datSize = int(sys.argv[2])
         if len(sys.argv) > 3:

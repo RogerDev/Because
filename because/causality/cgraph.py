@@ -580,7 +580,7 @@ class cGraph:
         return confidence
 
 
-    def testDirection(self, x, y, power=None, N_train=100000):
+    def testDirection(self, x, y, power=None, N_train=100000, sensitivity=None):
         """
         Test the implied directionality between two variables.
         rho > 0 implies forward direction (i.e. x -> y).
@@ -602,7 +602,7 @@ class cGraph:
         else:
             #rho = direction.test_direction(self.data[x], self.data[y])
             # Use standardized data
-            rho = direction.test_direction(self.iProb.ds[x], self.iProb.ds[y], power, N_train)
+            rho = direction.test_direction(self.iProb.ds[x], self.iProb.ds[y], power, N_train, sensitivity=sensitivity)
             # Add result to cache
             self.dirCache[cacheKey] = rho
             # Add reverse result to cache, with reversed rho
@@ -610,7 +610,7 @@ class cGraph:
             #self.dirCache[reverseKey] = -rho
         return rho
 
-    def testAllDirections(self, edges=None, power=None, N_train=100000):
+    def testAllDirections(self, edges=None, power=None, N_train=100000, sensitivity=None):
         if power is None:
             power = self.power
 
@@ -621,7 +621,7 @@ class cGraph:
         errors = 0
         for edge in edges:
             x, y = edge
-            rho = self.testDirection(x, y, power, N_train)
+            rho = self.testDirection(x, y, power, N_train, sensitivity=sensitivity)
             if rho > epsilon:
                 isError = False
             else:
@@ -666,7 +666,7 @@ class cGraph:
             print('cGraph.causalOrder: Could not converge to a definite order.')
         return cOrder
 
-    def findExogenous(self, exclude=[], power=None, N_train=100000):
+    def findExogenous(self, exclude=[], power=None, N_train=100000, sensitivity=None):
         if power is None:
             power = self.power
 
@@ -685,7 +685,7 @@ class cGraph:
                 y = rvList[j]
                 if x == y or y in exclude:
                     continue
-                R = self.testDirection(x, y, power, N_train)
+                R = self.testDirection(x, y, power, N_train, sensitivity=sensitivity)
 
                 if R > 0:
                     leastCausal = y
