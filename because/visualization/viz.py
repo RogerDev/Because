@@ -4,7 +4,7 @@ from because.probability import prob
 from because.synth import gen_data, read_data
 from because.visualization import probPlot1D, probPlot2D_exp, probPlot2D, probPlot3D_exp, probPlot3D, probPlot2D_bound, probPlot3D_bound, probPlotAll
 
-def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], filtSpec=[], controlFor=[], gtype='pdf', probspace=None, enhance=False, power=1):
+def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], filtSpec=[], controlFor=[], gtype='pdf', probspace=None, enhance=False, power=None):
     """
     Must specify either:
     - dataPath -- A .py SEM file for synthetic data or .csv for other data
@@ -169,4 +169,4 @@ if __name__ == '__main__':
         
         #print('dims, datSize, numRecs = ', dims, datSize, numRecs)
         show(dataPath=dataPath, numRecs=numRecs, targetSpec=tSpec, 
-            condSpec=cSpec, filtSpec=filtSpec, controlFor=cfSpec, gtype=gtype, enhance=enhance)
+            condSpec=cSpec, filtSpec=filtSpec, controlFor=cfSpec, gtype=gtype, enhance=enhance, power=5)

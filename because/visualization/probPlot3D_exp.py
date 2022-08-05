@@ -25,9 +25,8 @@ from because.visualization import grid
 def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], controlFor=[], gtype='pdf', probspace=None, power=1, enhance=False):
     assert len(targetSpec) == 1 and len(condSpec) == 2, 'probPlot3D_exp.show:  Must provide exactly one target and two conditions.  Got: ' + str(targetSpec) + ', ' + str(condSpec)
 
-    power = 3
     lim = 2  # Std's from the mean to test conditionals
-    numPts = 30 # How many eval points for each conditional
+    numPts = 20 # How many eval points for each conditional
     
     dims = 3
 
@@ -62,7 +61,8 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], controlFor=[], gtyp
     incrs = g.getIncrs()
     isDisc = [prob1.isDiscrete(v) for v in cond]
     nTests = g.getTestCount()
-    print('nTests = ', nTests)
+    #print('vSpaces = ', g.vSpaces)
+    #print('nTests = ', nTests)
     xt1 = []
     yt1 = []
     zt1 = []
@@ -84,6 +84,7 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], controlFor=[], gtyp
             condspec.append(spec)
         condspec2 = condspec + controlFor
         y_x = prob1.E(target, condspec2, power=power)
+        #print('y_x = ', y_x, ', condspec2 = ', condspec2)
         if type(y_x) == type(''):
             # If a string (categorical) value, map it to a number.
             y_x = prob1.getNumValue(target, y_x)
