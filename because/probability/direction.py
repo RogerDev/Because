@@ -42,13 +42,18 @@ def test_direction(rvA, rvB, power=1, N_train=100000, sensitivity=None):
         avg = cum / float(len(s1))
         cc = np.corrcoef([s1, s2])
         rho = cc[1, 0]
-        R = rho * avg
+        R = math.tanh(rho * avg * 100)
         return R
     else:
+        # If sensitivity is not specified, use power to set sensitivity
+        if sensitivity is None and power is not None:
+            sensitivity = min([10, max([1, power])])
         AtoB = non_linear_direct_test(rvA, rvB, N_train, sensitivity=sensitivity)
         BtoA = non_linear_direct_test(rvB, rvA, N_train, sensitivity=sensitivity)
-        R = AtoB - BtoA
-        return R/1000
+        R0 = (BtoA - AtoB) / (BtoA + AtoB)
+        R = math.tanh(R0)
+        #print('AtoB, BtoA, R = ', AtoB, BtoA, R, R0)
+        return R
 
 def non_linear_direct_test(A, B, N_train=100000, sensitivity=None):
 
@@ -72,17 +77,6 @@ def non_linear_direct_test(A, B, N_train=100000, sensitivity=None):
     residual = s2 - reg.predict(s1)
 
     num_f2 = 5
-    (p, Sta) = RCoT(A, residual, num_f2=num_f2)
-
-    if sensitivity is None:
-        # Use 0.99 as threshold to determine whether a pair of variables are dependent
-        result = (1 - p[0]) ** math.log(0.5, 0.99)
-    else:
-        assert 1 <= sensitivity <= 10, "sensitivity should be from range [1, 10]"
-        threshold = 11 - sensitivity
-        if Sta <= threshold:
-            result = 0.5 - math.tanh(threshold - Sta / num_f2 ** 2) / 2
-        else:
-            result = 0.5 + math.tanh(Sta / num_f2 ** 2 - threshold) / 2
-
-    return 1 - result
+    (p, Sta) = RCoT(A, residual, num_f2=num_f2, seed = 1)
+    #print('p, sta = ', p, Sta)
+    return Sta / (num_f2 ** 2)

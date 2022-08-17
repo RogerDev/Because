@@ -83,7 +83,7 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], controlFor=[], gtyp
             else:
                 spec = (condVar, val, val+incrs[c])
             condspec.append(spec)
-        condSpec += controlFor
+        condspec += controlFor
         y_x = prob1.P(targetSpec, condspec, power=power)
         jp = prob1.P(condspec, power=power)
         if enhance and jp < .1/nTests:

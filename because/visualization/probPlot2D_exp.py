@@ -19,7 +19,7 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from because.synth import gen_data
 from because.probability.rkhs.rkhsMV import RKHS
-from because.visualization import grid
+from because.visualization import grid2 as grid
 from because.probability.prob import ProbSpace
 
 def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], controlFor=[], gtype='pdf', probspace=None, enhance=False, power=1):
@@ -47,13 +47,13 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], controlFor=[], gtyp
 
     numRecs = prob1.N
     if numRecs <= 1000:
-        numPts = 25
+        numPts = 15
     elif numRecs <= 10000:
-        numPts = 30
+        numPts = 20
     elif numRecs < 100000:
-        numPts = 40
+        numPts = 25
     else:
-        numPts = 50 # How many eval points for each conditional
+        numPts = 30 # How many eval points for each conditional
 
     print('Dimensions = ', dims, '.  Conditionals = ', dims - 1)
     print('Number of points to test for each conditional = ', numPts)
@@ -63,7 +63,6 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], controlFor=[], gtyp
     vars = [target, cond]
     g = grid.Grid(prob1, [v2], lim, numPts)
     tps = g.makeGrid()
-    incrs = g.getIncrs()
 
     xt1 = []
     yt1 = []
@@ -75,16 +74,14 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], controlFor=[], gtyp
     ptiles = [16, 2.5]
     dp_start = time.time()
     for tp in tps:
-        bincr = incrs[0]
-        bval = tp[0]
-        if prob1.isCategorical(cond):
-            if prob1.isStringVal(cond):
-                bval = prob1.numToStr(cond, bval)
-            condspec = (cond, bval)
-        else:
-            condspec = (cond, bval, bval + bincr)
+        bspec = tp[0]
+        bnom = bspec[0]
+        bquery = (cond,) + bspec[1:]
+        if prob1.isStringVal(cond):
+            bnom = prob1.numToStr(cond, bnom)
+        condspec = [bquery]
         if controlFor:
-            condspec = [condspec] + controlFor
+            condspec = condspec + controlFor
         #print('condspec = ', condspec)
         #print('bval, bincr = ', bval, bincr)
         ey_x = prob1.E(target, condspec, power=power)
@@ -99,7 +96,7 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], controlFor=[], gtyp
         #print('ey_x, upper, lower, upper2, lower2 = ', ey_x, upper, lower, upper2, lower2)
         if ey_x is None:
             continue
-        xt1.append(bval)
+        xt1.append(bnom)
         yt1.append(ey_x)
         yt1_h.append(upper)
         yt1_l.append(lower)    

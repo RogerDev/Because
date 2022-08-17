@@ -378,7 +378,7 @@ class ProbSpace:
         return range(bucketCount)
 
     def SubSpace(self, givensSpec, minPoints=None, maxPoints=None, power=None,
-                        density=None, discSpecs=None, fixDistr=False):
+                        density=None, discSpecs=None, fixDistr=False, cMethod=None):
         """ Return a new ProbSpace object representing a sub-space of the current
             probability space.
             The returned object represents the multivariate joint probability space
@@ -406,6 +406,8 @@ class ProbSpace:
             power = self.power
         if density is None:
             density = self.density
+        if cMethod is None:
+            cMethod = self.cMethod
         #print('givens = ', givensSpec)
         #print('minPoints, maxPoints, self.N = ', minPoints, maxPoints, self.N)
         filtDat, parentProb, finalQuery = self.filter(givensSpec, minPoints=minPoints, maxPoints=maxPoints)
@@ -413,10 +415,10 @@ class ProbSpace:
         textInfo = (self.categoricalVars, self.fieldTypes, self.stringMap, self.stringMapR)
         if fixDistr:
             newPS = ProbSpace(filtDat, power = power, density = density, 
-                discSpecs = discSpecs, cMethod = self.cMethod, textInfo = textInfo)
+                discSpecs = discSpecs, cMethod = cMethod, textInfo = textInfo)
         else:
             newPS = ProbSpace(filtDat, power = power, density = density,
-                cMethod = self.cMethod, textInfo = textInfo)
+                cMethod = cMethod, textInfo = textInfo)
         newPS.parentProb = parentProb
         newPS.parentQuery = finalQuery
         if DEBUG:
@@ -583,12 +585,15 @@ class ProbSpace:
         val = (min + max) / 2
         return val
 
-    def makeHashkey(self, targetSpec, givenSpec, power):
+    def makeHashkey(self, targetSpec, givenSpec, power, cMethod=None):
         if type(targetSpec) == type([]):
             targetSpec = tuple(targetSpec)
         if type(givenSpec) == type([]):
             givenSpec = tuple(givenSpec)
-        hashKey = (targetSpec, givenSpec, power)
+        if cMethod is not None:
+            hashKey = (targetSpec, givenSpec, power, cMethod)
+        else:
+            hashKey = (targetSpec, givenSpec, power)
         return hashKey
 
     def normalizeSpecs(self, inSpecs):
@@ -690,7 +695,7 @@ class ProbSpace:
         assert len(targetSpecs) == 1, 'ProbSpace.E: target must be singular.  Got ' + str(targetSpecs)
         assert not self.specsAreBound(targetSpecs), 'ProbSpace.E: target must be unbound (i.e. a bare variable name or 1-tuple).  Got ' + str(targetSpecs)
         target = targetSpecs[0][0] # Single bare variable
-        cacheKey = self.makeHashkey(target, givenSpecs, power)
+        cacheKey = self.makeHashkey(target, givenSpecs, power, cMethod)
         if cacheKey in self.expCache.keys():
             return self.expCache[cacheKey]
         if not givenSpecs:
@@ -720,11 +725,11 @@ class ProbSpace:
                 # for numeric data.
                 result = np.mean(self.aData[findx])
         else:
-            if self.isDiscrete(target) or not self.specsAreContinuous(givenSpecs):
+            #if self.isDiscrete(target) or not self.specsAreContinuous(givenSpecs):
                 # If the target is discrete or any of the givens are discrete, we will
                 # need to use D-Prob.
-                if not (self.isCategorical(target) and cMethod == 'ml'):
-                    cMethod = 'd'
+            #    if not (self.isCategorical(target) and cMethod == 'ml'):
+            #        cMethod = 'd'
             if cMethod[0] == 'd':  # d or d!
                 #print('***** Discrete -- D-Prob')
                 result = self.Edisc(target, givenSpecs, power)
@@ -744,28 +749,66 @@ class ProbSpace:
         return result
 
     def Eml(self, target, givenSpecs, power):
-        condSpecs, filtSpecs = self.separateSpecs(givenSpecs)
+        def fixupSpecs(givenSpecs):
+            mustFilter = []
+            fixed = []
+            for spec in givenSpecs:
+                var = spec[0]
+                if len(spec) == 1:
+                    fixed.append(spec)
+                elif len(spec) == 2:
+                    val1 = spec[1]
+                    if type(val1) == type(''):
+                        # Looking for a single categorical (string) value.  Map to numeric
+                        map = self.stringMap[var]
+                        val1 = map[val1]
+                    fixed.append((var, val1))
+                elif len(spec) == 3:
+                    val1, val2 = spec[1:]
+                    if self.isCategorical(var):
+                        # Looking for one of several categorical values.  Can't use ML.
+                        mustFilter.append(spec)
+                    else:
+                        # Handle the case where range is [-inf, val] or [val, +inf]
+                        if val1 is None:
+                            indx = self.fieldIndex[var]
+                            minv = float(np.min(self.aData[indx]))
+                            cond = (minv + spec[2]) * .5
+                        elif val2 is None:
+                            indx = self.fieldIndex[var]
+                            maxv = float(np.max(self.aData[indx]))
+                            cond = (spec[1] + maxv) * .5
+                        else:
+                            # If a range, use the midpoint of the range for ML.
+                            cond = (spec[1] + spec[2]) * .5
+                        fixed.append((var, cond))
+                else:
+                    # Must be a multi value categorical filter.  Can't use ML.
+                    mustFilter.append(spec)
+            return mustFilter, fixed
+        mustFilter, givenSpecs = fixupSpecs(givenSpecs)
+        if mustFilter:
+            ss = self.SubSpace(mustFilter)
+        else:
+            ss = self
+        condSpecs, filtSpecs = ss.separateSpecs(givenSpecs)
+        n_estimators = min([power * 20, 200])
+        cacheVars = mustFilter + [var[0] for var in filtSpecs] + [var[0] for var in condSpecs]
+        cacheKey = (target, tuple(cacheVars))
+        
         if not condSpecs:
             # Straight (bound) conditioning
-            filtVars = [filtSpec[0] for filtSpec in filtSpecs]
-            filtVals = []
-            for filtSpec in filtSpecs:
-                if len(filtSpec) == 2:
-                    filtVals.append(filtSpec[1])
-                else:
-                    filtVals.append((filtSpec[1] + filtSpec[2]) / 2.0)
-            # Try to get rkhs from cache.  Otherwise create it.
-            cacheKey = (target, tuple(filtVars))
+            filtVars = [spec[0] for spec in filtSpecs]
+            filtVals = [spec[1] for spec in filtSpecs]
             if cacheKey in self.mlmodelCache.keys():
                 reg = self.mlmodelCache[cacheKey]
             else:
-                n_estimators = power * 20
                 if self.isCategorical(target):
                     reg = RandomForestClassifier(n_estimators=n_estimators)
                 else:
                     reg = RandomForestRegressor(n_estimators=n_estimators)
-                y = np.array(self.ds[target])
-                X = np.array([self.ds[filtVar] for filtVar in filtVars]).transpose()
+                y = np.array(ss.ds[target])
+                X = np.array([ss.ds[filtVar] for filtVar in filtVars]).transpose()
                 reg.fit(X, y)
                 self.mlmodelCache[cacheKey] = reg
             result = reg.predict(np.array(filtVals).reshape(1, -1))[0]
@@ -776,30 +819,25 @@ class ProbSpace:
             condFiltSpecs = self.getCondSpecs(condSpecs, power=power)
             accum = 0.0
             allProbs = 0.0
-            condVars = [spec[0] for spec in filtSpecs] + [spec[0] for spec in condFiltSpecs[0]]
-            # Try to get rkhs from cache.  Otherwise create it.
-            cacheKey = (target, tuple(condVars))
+            # Try to get model from cache.  Otherwise create it.
+            filtVars = [spec[0] for spec in filtSpecs] + [spec[0] for spec in condSpecs]
             if cacheKey in self.mlmodelCache.keys():
                 reg = self.mlmodelCache[cacheKey]
             else:
-                n_estimators = power * 20
                 if self.isCategorical(target):
                     reg = RandomForestClassifier(n_estimators=n_estimators)
                 else:
                     reg = RandomForestRegressor(n_estimators=n_estimators)
-                y = np.array(self.ds[target])
-                X = np.array([self.ds[condVar] for condVar in condVars]).transpose()
+                y = np.array(ss.ds[target])
+                X = np.array([ss.ds[condVar] for condVar in filtVars]).transpose()
                 reg.fit(X, y)
                 self.mlmodelCache[cacheKey] = reg
             for cf in condFiltSpecs:
-                specs = filtSpecs + cf
-                condVals = []
-                for spec in specs:
-                    if len(spec) == 2:
-                        condVals.append(spec[1])
-                    else:
-                        condVals.append((spec[1] + spec[2]) / 2.0)
-                exp = reg.predict(np.array(condVals).reshape(1, -1))[0]
+                # Shouldn't need any filtering at this point.  We just want to fixup the specs
+                unused, cf2 = fixupSpecs(cf)
+                allSpecs = filtSpecs + cf2
+                filtVals = [spec[1] for spec in allSpecs]
+                exp = reg.predict(np.array(filtVals).reshape(1, -1))[0]
                 if exp is None:
                     continue
                 probZ = self.P(cf)
@@ -1515,6 +1553,8 @@ class ProbSpace:
         else:
             #rho = direction.test_direction(self.data[x], self.data[y])
             # Use standardized data
+            if self.isIndependent(rvA, rvB):
+                return 0.0
             standA = standardize(self.ds[rvA])
             standB = standardize(self.ds[rvB])
             rho = direction.test_direction(standA, standB, power, N_train)
@@ -1542,7 +1582,7 @@ class ProbSpace:
         #print('old = ', spec, ', new =', outSpec, ', delta = ', deltaAdjust)
         return outSpec
 
-    def dependence(self, rv1, rv2, givenSpecs=[], power=None, raw=False, seed=None, num_f=100, num_f2=5, sensitivity=None,
+    def dependence(self, rv1, rv2, givenSpecs=[], power=None, raw=False, seed=1, num_f=100, num_f2=5, sensitivity=None,
                    dMethod='rcot'):
         """
         givens is [given1, given2, ... , givenN]
@@ -1691,7 +1731,7 @@ class ProbSpace:
 
 
 
-    def independence(self, rv1, rv2, givenSpecs=[], power=None, seed=None, num_f=100, num_f2=5, sensitivity=None,
+    def independence(self, rv1, rv2, givenSpecs=[], power=None, seed=1, num_f=100, num_f2=5, sensitivity=None,
                      dMethod='rcot'):
         """
             Calculate the independence between two variables, and an optional set of givens.
@@ -1708,7 +1748,7 @@ class ProbSpace:
         return ind
 
 
-    def isIndependent(self, rv1, rv2, givenSpecs=[], power=None, seed=None, num_f=100, num_f2=5, sensitivity=None,
+    def isIndependent(self, rv1, rv2, givenSpecs=[], power=None, seed=1, num_f=100, num_f2=5, sensitivity=None,
                       dMethod='rcot'):
         """ Determines if two variables are independent, optionally given a set of givens.
             Returns True if independent, otherwise False

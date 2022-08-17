@@ -25,7 +25,7 @@ class Scanner:
                 gnode = RV(name, parents, observed, dType, None, None)
                 gnodes.append(gnode)
             self.varNames.sort()
-            self.g = cGraph(gnodes, data)
+            self.g = cGraph(gnodes, data, power=self.power)
         else:
             # cgraph already exists
             self.g = cg
