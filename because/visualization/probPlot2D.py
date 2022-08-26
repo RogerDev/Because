@@ -23,13 +23,13 @@ from because.synth import read_data, gen_data
 from because.probability import independence
 from because.probability.prob import ProbSpace
 from because.probability.rkhs.rkhsMV import RKHS
-from because.visualization import grid
+from because.visualization import grid2 as grid
 
 def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], controlFor=[], gtype='pdf', probspace=None, enhance=True, power=1):
     assert len(targetSpec) == 1 and len(condSpec) == 1 or len(targetSpec) == 2 and len(condSpec) == 0, \
         'probPlot2D.show:  Must provide one target and one condition or two targets and no conditions.  Got: ' + str(targetSpec) + ', ' + str(condSpec)
 
-    lim = 1
+    lim = 1  # Percentile limit to show on graph (i.e. [percentile(lim), percentile(100-lim)])
     
     cumulative = False
     if gtype == 'cdf':
@@ -74,8 +74,7 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], controlFor=[], gtyp
     vars = targets + conds
     g = grid.Grid(prob1, vars, lim, numPts)
     tps = g.makeGrid()
-    incrs = g.getIncrs()
-    
+
     xt1 = []
     yt1 = []
     zt1 = []
@@ -96,44 +95,59 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], controlFor=[], gtyp
 
     dp_start = time.time()
     for tp in tps:
-        aval = tp[0]
-        bval = tp[1]
-        aincr = incrs[0]
-        bincr = incrs[1]
+        aspec = tp[0]
+        if len(aspec) > 2:
+            anom, alow, ahigh = aspec
+        else:
+            anom, aval = aspec
+
+        bspec = tp[1]
+        if len(bspec) > 2:
+            bnom, blow, bhigh = bspec
+        else:
+            bnom, bval = bspec
         if cumulative:
             if not joint:
+                # Conditional CDF
                 tSpec = [(targets[0],)]
-                cSpec = [(conds[0], None, bval)]
+                cSpec = [(conds[0], None, bnom)]
                 cSpec = cSpec + controlFor
                 d = prob1.distr(tSpec, cSpec, power=power)
                 if d is None:
                     psy_x = 0
                 else:
-                    psy_x = d.P((None, aval))
+                    psy_x = d.P((None, anom))
             else:
-                tSpec = [(targets[0], None, aval), (targets[1], None, bval)]
-                cSpec = []
-                cSpec = cSpec + controlFor
+                # Joint CDF
+                tSpec = [(targets[0], None, anom), (targets[1], None, bnom)]
+                tSpec = tSpec + controlFor
                 psy_x = prob1.P(tSpec, power=power)
         else:
             if not joint:
+                # Conditional PDF
                 if prob1.isCategorical(targets[0]):
-                    tSpec = (aval,)
+                    tSpec = (targets[0], aval)
                 else:
-                    tSpec = (aval, aval + aincr)
+                    tSpec = (targets[0], alow, ahigh)
                 if prob1.isCategorical(conds[0]):
                     cSpec = [(conds[0], bval)]
                 else:
-                    cSpec = [(conds[0], bval, bval + bincr)]
+                    cSpec = [(conds[0], blow, bhigh)]
                 cSpec = cSpec + controlFor
-                if controlFor:
-                    d = prob1.distr(targets[0], cSpec, power=power)
-                    psy_x = d.P(tSpec)
-                else:
-                    psy_x = prob1.P((targets[0],) + tSpec, cSpec, power=power)
+                psy_x = prob1.P(tSpec, cSpec, power=power)
                 #print('psy_x = ', psy_x, ', tSpec, cSpec = ', tSpec, cSpec)
             else:
-                tSpec = [(targets[0], aval, aval + aincr), (targets[1], bval, bval + bincr)]
+                # Joint PDF
+                if prob1.isCategorical(targets[0]):
+                    tSpec1 = (targets[0], aval)
+                else:
+                    tSpec1 = (targets[0], alow, ahigh)
+                if prob1.isCategorical(targets[1]):
+                    tSpec2 = (targets[1], bval)
+                else:
+                    tSpec2 = (targets[1], blow, bhigh)
+ 
+                tSpec = [tSpec1, tSpec2]
                 cSpec = controlFor
                 psy_x = prob1.P(tSpec, cSpec, power=power)
         if enhance:
@@ -143,8 +157,8 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], controlFor=[], gtyp
         if psy_x > 1:
             #print('got p > 1:  aval, bval = ', aval, bval, psy_x)
             psy_x = 1
-        xt1.append(tp[0])
-        yt1.append(tp[1])
+        xt1.append(anom)
+        yt1.append(bnom)
         zt1.append(psy_x)    
     dp_end = time.time()
 

@@ -12,8 +12,8 @@ class Grid:
         vSpaces = []
         incrs = []
         nTests = 1
-        nSamples = numPts - 1
         for i in range(dims):
+            nSamples = numPts
             vSpace = []
             var = vars[i]
             if ps.isDiscrete(var):
@@ -24,50 +24,35 @@ class Grid:
                         vSpace.append((val, val))
                 else:
                     # Discrete numeric.  Sample a range of values
-                    allVals = ps.getMidpoints(var)
+                    allVals0 = ps.getMidpoints(var)
+                    allVals = []
+                    minv = minvs[i]
+                    maxv = maxvs[i]
+                    # Bound the values between minv and maxv
+                    for val in allVals0:
+                        if val >= minv and val <= maxv + .01:
+                            allVals.append(val)
                     nVals = len(allVals)
+                    #print('nVals = ', nVals)
                     if nVals <= nSamples:
-                        # Eliminate the last value. We'll add in later.
-                        testVals = allVals[:-1]
+                        testVals = allVals
                         sampleIndxs = list(range(0, nVals))
+                        # We may return fewer samples than requested
+                        nSamples = len(sampleIndxs)
                     else:
                         # Let's try and reduce the number of values.
-                        reduction = int(nVals / numPts)
+                        reduction = int(nVals / nSamples)
                         # Take every Kth value, where K = reduction
                         sampleIndxs = list(range(0, nVals, reduction))
-                        # Since the above sometimes loses the last value (when nVals is even),
-                        # we'll take the center nSamples out of the remaining values, but 
-                        # when the remaining values - nSamples is odd, we'll favor the later values.
-                        start = ceil((len(sampleIndxs) - nSamples) / 2)
-                        # Extract the nSamples center values.
-                        sampleIndxs = sampleIndxs[start : start + nSamples]
+                        # We may return more samples than requested since we can only reduce by whole numbers 
+                        nSamples = len(sampleIndxs)
                         testVals = [allVals[indx] for indx in sampleIndxs]
-                    for j in range(len(testVals)):
+                        #print('reduction = ', reduction, ', testVals = ', len(testVals), testVals)
+                    for j in range(len(testVals)-1):
                         testVal = testVals[j]
-                        if j == 0:
-                            # First interval is [minVal, testVal]
-                            next = allVals[sampleIndxs[j] + 1]
-                            nominal = (allVals[0] + testVal) * .5
-                            vSpace.append((nominal, None, next))
-                        else:
-                            # Interval is (prev, testVal]
-                            prev = allVals[sampleIndxs[j - 1] + 1]
-                            if sampleIndxs[j] < len(allVals) - 1:
-                                next = allVals[sampleIndxs[j] + 1]
-                            else:
-                                next = allVals[-1] + 1
-                            #prev = testVals[j - 1]
-                            nominal = (prev + testVal) * .5
-                            vSpace.append((nominal, prev, next))
-                    # Always add in the last test val up to the max val
-                    # Interval is (prev, maxVal]
-                    maxVal = allVals[-1]
-                    if len(sampleIndxs) == len(allVals):
-                        lastTest = allVals[-1]
-                    else:
-                        lastTest = allVals[sampleIndxs[-1] + 1]
-                    nominal = (maxVal + lastTest) * .5
-                    vSpace.append((nominal, lastTest, None))
+                        nextVal = testVals[j+1]
+                        nominal = (testVal + nextVal) * .5
+                        vSpace.append((nominal, testVal, nextVal))
             else:
                 # Continuous.  Use even ranges.
                 testVals = list(np.linspace(minvs[i], maxvs[i], numPts + 1))[:-1]

@@ -1551,7 +1551,6 @@ class ProbSpace:
         if cacheKey in self.dirCache:
             rho = self.dirCache[cacheKey]
         else:
-            #rho = direction.test_direction(self.data[x], self.data[y])
             # Use standardized data
             if self.isIndependent(rvA, rvB):
                 return 0.0
@@ -1561,8 +1560,8 @@ class ProbSpace:
             # Add result to cache
             self.dirCache[cacheKey] = rho
             # Add reverse result to cache, with reversed rho
-            #reverseKey = (y,x)
-            #self.dirCache[reverseKey] = -rho
+            reverseKey = (rvB, rvA)
+            self.dirCache[reverseKey] = -rho
         return rho
 
     def adjustSpec(self, spec, delta):
@@ -1582,7 +1581,7 @@ class ProbSpace:
         #print('old = ', spec, ', new =', outSpec, ', delta = ', deltaAdjust)
         return outSpec
 
-    def dependence(self, rv1, rv2, givenSpecs=[], power=None, raw=False, seed=1, num_f=100, num_f2=5, sensitivity=None,
+    def dependence(self, rv1, rv2, givenSpecs=[], power=None, raw=False, seed=1, num_f=100, num_f2=5, sensitivity=5,
                    dMethod='rcot'):
         """
         givens is [given1, given2, ... , givenN]
@@ -1594,6 +1593,13 @@ class ProbSpace:
         Parameter num_f is the number of features for conditioning set, num_f2 is the number of features for
         non-conditioning set in 'rcot' method.
         """
+        if power is None:
+            power = self.power
+        if power == 0 and not givenSpecs:
+            # For unconditional with power = 0, return the absolute correlation coef
+            return abs(self.corrCoef(rv1, rv2))
+        if sensitivity is None:
+            sensitivity = 5
         if dMethod == "rcot":
             givenSpecs = self.normalizeSpecs(givenSpecs)
             givensU, givensB = self.separateSpecs(givenSpecs)
@@ -1602,27 +1608,49 @@ class ProbSpace:
                 ss1 = self.getCondSpace(givensB, Dtarg=2)
             else:
                 ss1 = self
-            x = ss1.ds[rv1]
-            y = ss1.ds[rv2]
+            x = np.array(ss1.ds[rv1])
+            y = np.array(ss1.ds[rv2])
+            if power < 100:
+                maxRecs = min([10000 * power, ss1.N])
+            else:
+                maxRecs = ss1.N
+            #maxRecs = ss1.N
+            
 
             if not givensU:
-                (p, Sta) = RCoT(x, y, num_f=num_f, num_f2=num_f2, seed=seed)
+                try:
+                    (p, Sta) = RCoT(x, y, num_f=num_f, num_f2=num_f2, seed=seed)
+                except:
+                    print('ProbSpace.dependence: RCoT Failed.  Using discrete method:', rv1, rv2)
+                    return self.dependence(rv1, rv2, givenSpecs, power=power,dMethod='d')
             else:
                 z = []
                 for rv in givensU:
-                    z.append(ss1.ds[rv[0]])
-                (Cxy_z, Sta, p) = RCoT(x, y, z, num_f=num_f, num_f2=num_f2, seed=seed)
-
-            if sensitivity is None:
+                    z.append(np.array(ss1.ds[rv[0]]))
+                if maxRecs < ss1.N:
+                    inds = np.random.choice(ss1.N, size=maxRecs, replace=False)
+                    x = x[inds]
+                    y = y[inds]
+                    for d in range(len(z)):
+                        z[d] = z[d][inds]
+                try:
+                    (Cxy_z, Sta, p) = RCoT(x, y, z, num_f=num_f, num_f2=num_f2, seed=seed)
+                except:
+                    print('ProbSpace.dependence: RCoT Failed.  Using discrete method:', rv1, rv2, givenSpecs)
+                    return self.dependence(rv1, rv2, givenSpecs, power=power,dMethod='d')
+            sensitivity = 5
+            assert 1 <= sensitivity <= 10, "sensitivity should be from range [1, 10]"
+            if sensitivity >= 10:
                 # Use 0.99 as threshold to determine whether a pair of variables are dependent
                 return (1 - p[0]) ** log(0.5, 0.99)
             else:
-                assert 1 <= sensitivity <= 10, "sensitivity should be from range [1, 10]"
+                staScaled = log(Sta / (num_f2**2) + 1)
+                #print('staScaled = ', staScaled)
                 threshold = 11 - sensitivity
-                if Sta <= threshold:
-                    return 0.5 - math.tanh(threshold - Sta / num_f2 ** 2) / 2
+                if staScaled <= threshold:
+                    return 0.5 - math.tanh(threshold - staScaled) / 2
                 else:
-                    return 0.5 + math.tanh(Sta / num_f2 ** 2 - threshold) / 2
+                    return 0.5 + math.tanh(staScaled - threshold) / 2
 
         # Get all the combinations of rv1, rv2, and any givens
         # Depending on power, we test more combinations.  If level >= 100, we test all combos
@@ -1731,7 +1759,7 @@ class ProbSpace:
 
 
 
-    def independence(self, rv1, rv2, givenSpecs=[], power=None, seed=1, num_f=100, num_f2=5, sensitivity=None,
+    def independence(self, rv1, rv2, givenSpecs=[], power=None, seed=1, num_f=100, num_f2=5, sensitivity=5,
                      dMethod='rcot'):
         """
             Calculate the independence between two variables, and an optional set of givens.
@@ -1748,7 +1776,7 @@ class ProbSpace:
         return ind
 
 
-    def isIndependent(self, rv1, rv2, givenSpecs=[], power=None, seed=1, num_f=100, num_f2=5, sensitivity=None,
+    def isIndependent(self, rv1, rv2, givenSpecs=[], power=None, seed=1, num_f=100, num_f2=5, sensitivity=5,
                       dMethod='rcot'):
         """ Determines if two variables are independent, optionally given a set of givens.
             Returns True if independent, otherwise False

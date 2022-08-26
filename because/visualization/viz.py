@@ -2,7 +2,8 @@ import time
 from sys import argv
 from because.probability import prob
 from because.synth import gen_data, read_data
-from because.visualization import probPlot1D, probPlot2D_exp, probPlot2D, probPlot3D_exp, probPlot3D, probPlot2D_bound, probPlot3D_bound, probPlotAll
+from because.visualization import probPlot1D, probPlot2D_exp, probPlot2D, probPlot3D_exp, probPlot3D
+from because.visualization import probPlot2D_bound, probPlot3D_bound, probPlotAll, heatmap
 
 def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], filtSpec=[], controlFor=[], gtype='pdf', probspace=None, enhance=False, power=None):
     """
@@ -15,9 +16,11 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], filtSpec=[], contro
     - 'pdf' -- Probability Density Function
     - 'cdf' -- Cumulative Probability Density
     - 'exp' -- Expected Value
+    - 'multi' -- Multiple pdf
+    - 'hmap' -- Heat Map
     """
     assert probspace is not None or dataPath, 'Viz.show:  Must specify either dataPath or probspace.'
-    valid_gtypes = ['exp', 'pdf', 'cdf', 'multi']
+    valid_gtypes = ['exp', 'pdf', 'cdf', 'multi', 'hmap']
     assert gtype in valid_gtypes, 'Vizshow:  Invalid gtype provided.  Valid types are: ' + str(valid_gtypes) + '. Got: ' + str(gtype)
     tempSpec = []
     for targ in targetSpec:
@@ -57,12 +60,16 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], filtSpec=[], contro
     condSpec = probspace.normalizeSpecs(condSpec)
     print('Viz.show: Target = ', targetSpec, ', Condition = ', condSpec)
     dims = len(targetSpec) + len(condSpec)
-    assert dims <= 3 or gtype == 'multi', 'Viz.show: Can only visualize up to three dimensions.  Got: ' + str(dims) + '.'
-    valid_gtypes = ['exp', 'cum']
+    assert dims <= 3 or gtype == 'multi' or gtype == 'hmap', 'Viz.show: Can only visualize up to three dimensions.  Got: ' + str(dims) + '.'
     if gtype == 'multi':
         assert len(condSpec) == 0, 'Viz.show: Conditions cannot be used for multi-variable graphs (gtype=multi).'
         graph = probPlotAll
         graphName = 'Multi Variable PDF Plot'
+    elif gtype == 'hmap':
+        # Heat map
+        assert len(condSpec) == 0, 'Viz.show: Conditions cannot be used for heat maps (gtype=hmap).'
+        graph = heatmap
+        graphName = 'Variable Dependence Heatmap'
     elif gtype == 'exp':
         assert len(targetSpec) == 1, 'Viz.show: Only a single target is supported for Expectation graphs.  Got: ' + str(targetSpec)
         assert len(condSpec) > 0 and len(condSpec) <= 2, 'Vis.show: Expectation graphs must specify 1 or 2 conditions.  Got: ' + str(len(condSpec))

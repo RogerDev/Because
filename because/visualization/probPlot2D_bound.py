@@ -19,12 +19,12 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from because.synth import gen_data
 from because.probability.rkhs.rkhsMV import RKHS
-from because.visualization import grid
+from because.visualization import grid2 as grid
 from because.probability.prob import ProbSpace
 
 def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], controlFor=[], gtype='pdf', probspace=None, enhance=False, power=1):
     assert len(targetSpec) == 1 and len(condSpec) == 1, 'probPlot2D_exp.show:  Must provide exactly one target and one condition.  Got: ' + str(targetSpec) + ', ' + str(condSpec)
-    lim = 1
+    lim = 1  # Percentile limit to show on graph (i.e. [percentile(lim), percentile(100-lim)])
     dims = 2
  
     v1 = targetSpec[0][0]
@@ -62,7 +62,6 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], controlFor=[], gtyp
 
     g = grid.Grid(prob1, [v2], lim, numPts)
     tps = g.makeGrid()
-    incrs = g.getIncrs()
 
     xt1 = []
     yt1 = []
@@ -71,20 +70,21 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], controlFor=[], gtyp
     
     dp_start = time.time()
     for tp in tps:
-        bincr = incrs[0]
-        bval = tp[0]
+        bspec = tp[0]
+        bnom = bspec[0]
+        bquery = (cond,) + bspec[1:]
         if condIsString:
-            bval = prob1.numToStr(cond, bval)
+            bval = prob1.numToStr(cond, bspec[1])
+            bnom = bval
             condspec = (cond, bval)
         else:
-            condspec = (cond, bval, bval + bincr)
+            condspec = bquery
         if controlFor:
             condspec = [condspec] + controlFor
         #print('condspec = ', condspec)
-        #print('bval, bincr = ', bval, bincr)
         py_x = prob1.P(targetSpec, condspec, power=power)
         #print('ey_x, upper, lower, upper2, lower2 = ', ey_x, upper, lower, upper2, lower2)
-        xt1.append(bval)
+        xt1.append(bnom)
         yt1.append(py_x)
     dp_end = time.time()
     print('Test Time = ', round(dp_end-dp_start, 3))

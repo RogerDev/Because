@@ -24,7 +24,7 @@ from because.probability.prob import ProbSpace
 
 def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], controlFor=[], gtype='pdf', probspace=None, enhance=False, power=1):
     assert len(targetSpec) == 1 and len(condSpec) == 1, 'probPlot2D_exp.show:  Must provide exactly one target and one condition.  Got: ' + str(targetSpec) + ', ' + str(condSpec)
-    lim = 1
+    lim = 1  # Percentile limit to show on graph (i.e. [percentile(lim), percentile(100-lim)])
     dims = 2
  
     v1 = targetSpec[0][0]
@@ -83,7 +83,6 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], controlFor=[], gtyp
         if controlFor:
             condspec = condspec + controlFor
         #print('condspec = ', condspec)
-        #print('bval, bincr = ', bval, bincr)
         ey_x = prob1.E(target, condspec, power=power)
         dist = prob1.distr(target, condspec, power=power)
         #ey_x = dist.E()

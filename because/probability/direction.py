@@ -29,7 +29,8 @@ def test_direction(rvA, rvB, power=1, N_train=100000, sensitivity=None):
         close to zero (e.g. +/- 10**-5) means that causal
         direction could not be determined.
     """
-    if power <= 1:
+    if power < 1:
+        # If power = 0, use lingam (i.e. linear method)
         # Pairwise Lingam Algorithm (Hyperbolic Tangent (HT) variant)
         cum = 0
         s1 = rvA
@@ -45,17 +46,14 @@ def test_direction(rvA, rvB, power=1, N_train=100000, sensitivity=None):
         R = math.tanh(rho * avg * 100)
         return R
     else:
-        # If sensitivity is not specified, use power to set sensitivity
-        if sensitivity is None and power is not None:
-            sensitivity = min([10, max([1, power])])
-        AtoB = non_linear_direct_test(rvA, rvB, N_train, sensitivity=sensitivity)
-        BtoA = non_linear_direct_test(rvB, rvA, N_train, sensitivity=sensitivity)
+        AtoB = non_linear_direct_test(rvA, rvB, N_train,)
+        BtoA = non_linear_direct_test(rvB, rvA, N_train)
         R0 = (BtoA - AtoB) / (BtoA + AtoB)
         R = math.tanh(R0)
         #print('AtoB, BtoA, R = ', AtoB, BtoA, R, R0)
         return R
 
-def non_linear_direct_test(A, B, N_train=100000, sensitivity=None):
+def non_linear_direct_test(A, B, N_train=100000):
 
     s1 = np.array(A).reshape(-1, 1)
     s2 = np.array(B)
@@ -78,5 +76,4 @@ def non_linear_direct_test(A, B, N_train=100000, sensitivity=None):
 
     num_f2 = 5
     (p, Sta) = RCoT(A, residual, num_f2=num_f2, seed = 1)
-    #print('p, sta = ', p, Sta)
-    return Sta / (num_f2 ** 2)
+    return math.log(Sta / (num_f2 ** 2) + 1)

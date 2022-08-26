@@ -23,7 +23,7 @@ from because.synth import read_data, gen_data
 from because.probability import independence
 from because.probability.prob import ProbSpace
 from because.probability.rkhs.rkhsMV import RKHS
-from because.visualization import grid
+from because.visualization import grid2 as grid
 
 def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], gtype='pdf', probspace=None):
     # Arg format is  <datSize>
@@ -83,25 +83,28 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], gtype='pdf', probsp
         var = vars[i]
         g = grid.Grid(prob1, [var], lim, numPts)
         tps = g.makeGrid()
-        incrs = g.getIncrs()
-        incr = incrs[0]
         isCat = prob1.isCategorical(var)
         isStr = prob1.isStringVal(var)
         for tp in tps:
             t = tp[0]
+            if len(t) > 2:
+                vnom, vlow, vhigh = t
+            else:
+                vnom, vval = t
             if isCat:
                 if isStr:
-                    t = prob1.numToStr(var, t)
-                tSpec = (var, t)
+                    vval = prob1.numToStr(var, vval)
+                    vnom = vval
+                tSpec = (var, vval)
             else:
-                tSpec = (var, t, t+incr)
+                tSpec = (var, vlow, vhigh)
             p = prob1.P(tSpec)
-            xTraces[i].append(t)
+            xTraces[i].append(vnom)
             yTraces[i].append(p)
     end = time.time()
-    cols = 2
+
+    cols = 3
     rows = ceil(len(vars) / cols)
- 
     
     # Initialize the figure
     #plt.style.use('seaborn-darkgrid')

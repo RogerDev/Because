@@ -23,7 +23,7 @@ from because.synth import read_data, gen_data
 from because.probability import independence
 from because.probability.prob import ProbSpace
 from because.probability.rkhs.rkhsMV import RKHS
-from because.visualization import grid
+from because.visualization import grid2 as grid
 
 def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], gtype='pdf', probspace=None):
     assert len(condSpec) == 0 and len(targetSpec) == 1, 'ProbPlot1D.show: a single target variable is required and no conditions are supported.'
@@ -70,44 +70,42 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], gtype='pdf', probsp
     # Get test points
     g = grid.Grid(prob1, [v1], lim, numPts)
     tps = g.makeGrid()
-    incrs = g.getIncrs()
-    incr = incrs[0]
-    print('incr = ', incr)
     xt1 = []
-    xt2 = []
     yt1 = []
-    yt2 = []
 
     target = v1
     dp_start = time.time()
     for tp in tps:
         t = tp[0]
+        if len(t) > 2:
+            tnom, tstart, tend = t
+        else:
+            tnom, tval = t
         if cumulative:
             d = prob1.distr(target)
             if d is None:
                 py = 0
             else:
-                py = d.P((None, t))
+                py = d.P((None, tend))
         else:
             if prob1.isCategorical(target):
                 if prob1.isStringVal(target):
-                    t = prob1.numToStr(target, t)
-                tSpec = (target, t)
+                    tval = prob1.numToStr(target, tval)
+                    tnom = tval
+                tSpec = (target, tval)
             else:
-                tSpec = (target, t, t+incr)
-                #print('tSpec = ', tSpec)
+                tSpec = (target, tstart, tend)
+            #print('tSpec = ', tSpec)
 
             py = prob1.P(tSpec)
             if py is None:
                 continue
             if py > 1:
-                print('got p > 1:  t = ', t)
+                print('got p > 1:  t = ', tstart, tend)
                 py = 1
-        xt1.append(t)
+        xt1.append(tnom)
         yt1.append(py)
     dp_end = time.time()
-    results = []
-    ysum = 0.0
 
     fig = plt.figure(tight_layout=True)
 

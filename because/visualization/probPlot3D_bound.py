@@ -20,13 +20,13 @@ from because.synth import read_data, gen_data
 from because.probability import independence
 from because.probability.prob import ProbSpace
 from because.probability.rkhs.rkhsMV import RKHS
-from because.visualization import grid
+from because.visualization import grid2 as grid
 
 def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], controlFor=[], gtype='pdf', probspace=None, power=1, enhance=False):
     assert len(targetSpec) == 1 and len(condSpec) == 2, 'probPlot3D_bound.show:  Must provide exactly one target and two conditions.  Got: ' + str(targetSpec) + ', ' + str(condSpec)
 
     power = 3
-    lim = 2  # Std's from the mean to test conditionals
+    lim = 1  # Percentile limit to show on graph (i.e. [percentile(lim), percentile(100-lim)])
     numPts = 30 # How many eval points for each conditional
     
     dims = 3
@@ -44,14 +44,17 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], controlFor=[], gtyp
         prob1 = probspace
     
     numRecs = prob1.N
-    if numRecs <= 1000:
-        numPts = 15
-    elif numRecs <= 10000:
-        numPts = 20
-    elif numRecs < 100000:
-        numPts = 25
-    else:
-        numPts = 30 # How many eval points for each conditional
+    print('numRecs = ', numRecs)
+    numPts = min([max([8, int(numRecs**(1/(dims+1)))]), 40])
+    print('Samples per dimension = ', numPts)
+    # if numRecs <= 1000:
+    #     numPts = 8
+    # elif numRecs <= 10000:
+    #     numPts = 10
+    # elif numRecs < 100000:
+    #     numPts = 15
+    # else:
+    #     numPts = 20 # How many eval points for each conditional
 
     target = targetSpec[0][0]
     cond = [condSpec[0][0], condSpec[1][0]]
@@ -60,36 +63,36 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], controlFor=[], gtyp
     # Generate the test points
     g = grid.Grid(prob1, cond, lim, numPts)
     tps = g.makeGrid()
-    incrs = g.getIncrs()
     isCategorical = [prob1.isCategorical(v) for v in cond]
     nTests = g.getTestCount()
     print('nTests = ', nTests)
     xt1 = []
     yt1 = []
     zt1 = []
-    tnum = 0
-    ssTot = 0 # Total sum of squares for R2 computation
-    cmprs = []
-    dp_est = []
     dp_start = time.time()
     for t in tps:
+        cnoms = []
         condspec = []
         for c in range(dims-1):
+            spec = t[c]
+            cnom = spec[0]
             condIsCat = isCategorical[c]
             condVar = cond[c]
-            val = t[c]
             if condIsCat:
-                spec = (condVar, val)
+                cval = spec[1]
+                spec = (condVar, cval)
             else:
-                spec = (condVar, val, val+incrs[c])
+                clow, chigh = spec[1:]
+                spec = (condVar, clow, chigh)
             condspec.append(spec)
-        condspec += controlFor
-        y_x = prob1.P(targetSpec, condspec, power=power)
+            cnoms.append(cnom)
+        condspec2 = condspec + controlFor
+        y_x = prob1.P(targetSpec, condspec2, power=power)
         jp = prob1.P(condspec, power=power)
         if enhance and jp < .1/nTests:
             continue
-        xt1.append(t[0])
-        yt1.append(t[1])
+        xt1.append(cnoms[0])
+        yt1.append(cnoms[1])
         zt1.append(y_x)
     dp_end = time.time()
     print('Test Time = ', round(dp_end-dp_start, 3))
