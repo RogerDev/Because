@@ -4,6 +4,7 @@ Causal Graph Module.
 Implements class cGraph for defining and analyzing causal models.
 """
 import math
+from termios import IMAXBEL
 
 import networkx
 import numpy as np
@@ -13,6 +14,7 @@ from because.probability import ProbSpace
 from because.probability import PDF
 from because.probability import direction
 from because.probability.standardiz import standardize
+from because.visualization import grid2 as grid
 
 VERBOSE = 1
 DEBUG = False
@@ -30,14 +32,24 @@ class cGraph:
     without data.
     
     Args:
-        rvList(list) List of Random Variable objects (see rv.py).
+        rvList(list) List of Random Variable objects including their causal relationships (see rv.py).
+                This represents the causal model.
         data(dictionary) Dictionary mapping each observed variable name to a list of observed values.
                     The value lists for all variables should be the same length (i.e. nObservations).
                     Defaults to {}.
-    """
-    def __init__(self, rvList, data={}, power=1):
+        ps probability.prob.ProbSpace object.
 
-        self.power = power
+        Must include rvList and either data or ps.  ProbSpace contains its own data.
+    """
+    def __init__(self, rvList, data={}, ps=None, power=None):
+        assert (data or ps) and not (data and ps), 'cGraph: Must pass either data or ps (ProbSpace object), but not both.'
+        if power is None:
+            if ps:
+                self.power = ps.power
+            else:
+                self.power = power
+        else:
+            self.power = power
         self.g = networkx.DiGraph()
         self.rvDict = {}
         for rv in rvList:
@@ -65,18 +77,24 @@ class cGraph:
                 self.edgeDict[d].append(edge)
             else:
                 self.edgeDict[d] = [edge]
-        # Create a probability space object for later use
-        self.prob = ProbSpace(self.data, power=self.power)
+        # Create a probability space object for later use, if one wasn't passed in.
+        if not ps:
+            self.prob = ProbSpace(self.data, power=self.power)
+        else:
+            self.prob = ps
+            power = ps.power
         # Create a separate standardized probability space for independence testing.
         iData = {}
         for var in self.data.keys():
             iData[var] = standardize(self.data[var])
-        self.iProb = ProbSpace(iData)
 
         self.bdCache = {}
         self.fdCache = {}
         self.indepCache = {}
         self.dirCache = {}
+
+    def getRVs(self):
+        return [self.rvDict[varName] for varName in self.rvList]
 
     def setIndepCache(self, cache):
         """
@@ -127,7 +145,20 @@ class cGraph:
         """
         d = self.prob.distr(varName)
         print('stats(', varName,':', 'mean =', d.E(), ', stDev =', d.stDev(), ', skew =',  d.skew(), ', kurtosis =', d.kurtosis())
-        
+
+    def reverseLink(self, source, dest):
+        rv1 = self.rvDict[source]
+        rv2 = self.rvDict[dest]
+        if rv1.name in rv2.parentNames:
+            rv2.parentNames.remove(rv1.name)
+            rv1.parentNames.append(rv2.name)
+            self.g.remove_edge(source, dest)
+            self.g.add_edge(dest, source)
+            self.edgeDict[source].remove((source,dest))
+            self.edgeDict[source].append((dest, source))
+            self.edgeDict[dest].remove((source,dest))
+            self.edgeDict[dest].append((dest, source))
+
     def isExogenous(self, varName):
         """
         Return True if variable is exogenous (i.e. has no parents)
@@ -371,7 +402,7 @@ class cGraph:
         for d in deps:
             print(self.formatDependency(d))
 
-    def testIndependence(self, x, y, z=[], power=1):
+    def testIndependence(self, x, y, z=[], power=1, sensitivity=5):
         """
         Test the independence between two variables, with zero or more
         conditional variables.
@@ -392,14 +423,14 @@ class cGraph:
         if cacheKey in self.indepCache:
             independence = self.indepCache[cacheKey]
         else:
-            dependence = self.iProb.dependence(x, y, z, power=power)
+            dependence = self.prob.dependence(x, y, z, power=power, sensitivity=sensitivity)
             independence = 1 - dependence
             self.indepCache[cacheKey] = independence
             reverseKey = (y, x, tuple(z))
             self.indepCache[reverseKey] = independence
         return independence
 
-    def testDependence(self, x, y, z=[], power=1):
+    def testDependence(self, x, y, z=[], power=1, sensitivity=5):
         """
         Test the dependence between two variables, with zero or more
         conditional variables.
@@ -415,10 +446,10 @@ class cGraph:
             string: P-val -- A value between 0 and 1.  Values < .5 imply independence.
                         Values > .5 imply dependence.  Values near .5 are ambiguous.
         """
-        return 1 - self.testIndependence(x, y, z, power=power)
+        return 1 - self.testIndependence(x, y, z, power=power, sensitivity=sensitivity)
 
 
-    def TestModel(self, data=None, order=3, power=1, deps=None, edges=None):
+    def TestModel(self, data=None, order=3, power=None, sensitivity=5, deps=None, edges=None):
         """
         Test the model for consistency with a set of data.
         Format for data is {variableName: [variable value]}.
@@ -455,12 +486,10 @@ class cGraph:
             - warningDetails is a list of tests with warnings.  Format is the same as
                 for errorDetails above.
         """
-        # Standardize the data before doing independence testing
+        if power is None:
+            power = self.power
         warningPenalty = .0025
-        iData = {}
-        for var in self.data.keys():
-            iData[var] = standardize(self.data[var])
-        ps = ProbSpace(iData)
+        ps = self.prob
         numTestTypes = 4
         errors = []
         warnings = []
@@ -479,7 +508,7 @@ class cGraph:
             if z is None:
                 z = []
             #pval = independence.test(ps, [x], [y], z, power=power)
-            pval = self.testIndependence(x, y, z, power=power)
+            pval = self.testIndependence(x, y, z, power=power, sensitivity=sensitivity)
             print(x, y, z)
             errStr = None
             warnStr = None
@@ -490,6 +519,11 @@ class cGraph:
                 testType = 1
             else:
                 testType = 2
+            if testType == 2:
+                pval = self.testIndependence(x, y, z, power=power, sensitivity=10)
+            else:
+                pval = self.testIndependence(x, y, z, power=power, sensitivity=sensitivity)
+
             numTestsPerType[testType] += 1
             if testType == 0 and pval < .5:
                     errStr = 'Error (Type 0 -- Exogenous variables not independent) -- Expected: ' + self.formatDependency(dep) + ' but dependence was detected. P-val = ' + str(pval)
@@ -517,7 +551,7 @@ class cGraph:
                 print('.',)
         # Now test directionalities
         testType = 3
-        dresults = self.testAllDirections(edges = edges)
+        dresults = self.testAllDirections(edges = edges, power=power)
         derrs = 0
         for dresult in dresults:
             isError, cause, effect, rho = dresult
@@ -580,7 +614,7 @@ class cGraph:
         return confidence
 
 
-    def testDirection(self, x, y, power=None, N_train=100000, sensitivity=None):
+    def testDirection(self, x, y, power=None):
         """
         Test the implied directionality between two variables.
         rho > 0 implies forward direction (i.e. x -> y).
@@ -602,7 +636,7 @@ class cGraph:
         else:
             #rho = direction.test_direction(self.data[x], self.data[y])
             # Use standardized data
-            rho = direction.test_direction(self.iProb.ds[x], self.iProb.ds[y], power, N_train, sensitivity=sensitivity)
+            rho = self.prob.testDirection(x, y, power)
             # Add result to cache
             self.dirCache[cacheKey] = rho
             # Add reverse result to cache, with reversed rho
@@ -610,7 +644,7 @@ class cGraph:
             #self.dirCache[reverseKey] = -rho
         return rho
 
-    def testAllDirections(self, edges=None, power=None, N_train=100000, sensitivity=None):
+    def testAllDirections(self, edges=None, power=None):
         if power is None:
             power = self.power
 
@@ -621,7 +655,7 @@ class cGraph:
         errors = 0
         for edge in edges:
             x, y = edge
-            rho = self.testDirection(x, y, power, N_train, sensitivity=sensitivity)
+            rho = self.testDirection(x, y, power)
             if rho > epsilon:
                 isError = False
             else:
@@ -634,6 +668,7 @@ class cGraph:
     def causalOrder(self, power=1):
         maxTries = 10
         cOrder = []
+        correct = True
         while len(cOrder) < len(self.rvList):
             exos = self.findExogenous(exclude=cOrder)
             cOrder += exos
@@ -649,8 +684,6 @@ class cGraph:
                     if var3 == var1 or var3 == var2:
                         continue
                     dep = self.testDependence(var1, var2, [var3], power=power)
-                    #dep = self.iProb.dependence(var1, var2, var3, raw=True)
-                    #print('dep', var1, var2, var3, '=', dep)
                     if dep < lowestDep:
                         lowestDep = dep
                         bestParent = var3
@@ -703,7 +736,6 @@ class cGraph:
                 isExo = True
                 for exo in exos:
                     pval = self.testIndependence(var, exo, power=power)
-                    #pval = independence.test(self.iProb, [var], [exo])
                     #print('ind ', var, '-', exo, ' = ', pval)
                     if pval < .5:
                         isExo = False
@@ -721,7 +753,6 @@ class cGraph:
             for pvar in parentList:
                 if var in parentList:
                     continue
-                #pval = self.iProb.independence(pvar, var)
                 pval = self.testIndependence(pvar, var, power=power)
                 isInd = False
                 if pval > .5:
@@ -820,6 +851,69 @@ class cGraph:
         tr = np.array(testResults)
         final = float(np.mean(tr))
         return final
+
+    def MDE(self, cause, effect, power=None):
+        """
+        Maximum Direct Effect of cause on effect
+        Returns the Maximum effect of cause on effect.  This works
+        for categorical as well as numeric variables.
+        """
+        if power is None:
+            power = self.power
+        g = grid.Grid(self.prob, [cause], numPts=10)
+        testpoints = g.makeGrid()
+        numPoints = g.getTestCount()
+        minv = 1000000000
+        maxv = -1000000000
+        iMin = None
+        iMax = None
+        i = 0
+        for testspec in testpoints:
+            testpoint = testspec[0]
+            if len(testpoint) == 2:
+                nom, val = testpoint
+                effDistr = self.intervene(effect, [(cause, val)])
+                effVal = effDistr.E()
+                    
+            else:
+                nom, lowval, highval = testpoint
+                if lowval:
+                    val = lowval
+                else:
+                    val = highval
+                effDistr = self.intervene(effect, [(cause, val)])
+            if effDistr is None:
+                continue
+            effVal = effDistr.E()
+            if effVal < minv:
+                minv = effVal
+                iMin = i
+            if effVal >= maxv:
+                maxv = effVal
+                iMax = i
+            i += 1        
+        effDistr = self.prob.distr(effect)
+        # Use 90p - 10p as the effective range (imperfect)
+        eff10 = effDistr.percentile(10)
+        eff90 = effDistr.percentile(90)
+        effRange = eff90 - eff10
+        if effRange == 0:
+            # In case 10p and 90p are the same (e.g. imbalanced binary vars),
+            # Use the min and the max.
+            minEff = effDistr.minVal()
+            maxEff = effDistr.maxVal()
+            effRange = maxEff - minEff
+        cRange = maxv - minv
+        if effRange > 0:
+            mde = cRange / effRange
+        elif cRange > 0:
+            mde = 1
+        else:
+            mde = 0
+        # Bound at 1.0.  It is possible to be over 1 due to the inexactness of the denominator.
+        mde = min([mde, 1.0])
+        #print('iMin, iMax, minv, maxv, mde = ',iMin, iMax, minv, maxv, mde)
+        return mde
 
     def findBackdoorBlockingSet(self, source, target):
         """ 

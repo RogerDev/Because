@@ -1,6 +1,7 @@
 from because.probability import ProbSpace
 
-def getTestItems(targets, testPair=None, maxLevel=3):
+def getTestItems(targets, testPair=None, minLevel=0, maxLevel=3):
+        assert minLevel <= maxLevel, "calc_indeps.getTestItems: minLevel must be less than or equal to maxLevel (min, max) = " + str(minLevel) + ', ' + str(maxLevel)
         pairs = []
         if testPair is None:
             # We're testing all pairs of variables
@@ -13,9 +14,10 @@ def getTestItems(targets, testPair=None, maxLevel=3):
             pairs.append(testPair)
         # At this point we have all unordered pairs of variables
         # Now generate first level tests
-        for pair in pairs:
-            yield (pair[0], pair[1], [])                
-        if maxLevel >= 1:
+        if minLevel == 0:
+            for pair in pairs:
+                yield (pair[0], pair[1], [])                
+        if maxLevel >= 1 and minLevel <= 1:
             for pair in pairs:
                 # Generate tests with one conditional
                 for i in range(len(targets)):
@@ -23,7 +25,7 @@ def getTestItems(targets, testPair=None, maxLevel=3):
                     if interm == pair[0] or interm == pair[1]:
                         continue
                     yield (pair[0], pair[1], [interm])
-        if maxLevel >= 2:
+        if maxLevel >= 2 and minLevel <= 2:
             # And do the same for any double conditionals
             for pair in pairs:
                 for i in range(len(targets)):
@@ -35,7 +37,7 @@ def getTestItems(targets, testPair=None, maxLevel=3):
                         if interm2 == pair[0] or interm2 == pair[1]:
                             continue
                         yield (pair[0], pair[1], [interm, interm2])
-        if maxLevel >= 3:
+        if maxLevel >= 3 and minLevel <= 3:
             # Now do 3 level conditionals
             for pair in pairs:
                 for i in range(len(targets)):
@@ -52,7 +54,7 @@ def getTestItems(targets, testPair=None, maxLevel=3):
                                 continue
                             yield (pair[0], pair[1], [interm, interm2, interm3])
 
-        if maxLevel >= 4:
+        if maxLevel >= 4 and minLevel <= 4:
             # Now do 4 level conditionals
             for pair in pairs:
                 for i in range(len(targets)):
@@ -73,27 +75,28 @@ def getTestItems(targets, testPair=None, maxLevel=3):
                                     continue
                                 yield (pair[0], pair[1], [interm, interm2, interm3, interm4])
                                 
-def calculateAll(ps, testList=None, varNames=None, maxLevel=3, power=5):
+def calculateAll(ps, testList=None, varNames=None, minLevel=0, maxLevel=3, sensitivity=5, power=5):
     if testList is None:
         assert varNames is not None, 'calc_indeps.calculate: must provide testList or varNames.'
-        testList = getTestItems(varNames, maxLevel=maxLevel)
+        testList = getTestItems(varNames, minLevel=minLevel, maxLevel=maxLevel)
     for item in testList:
         v1 = item[0]
         v2 = item[1]
         conds = item[2]
-        if ps.isIndependent(v1, v2, conds, power=power):
+        if ps.isIndependent(v1, v2, conds, power=power, sensitivity=sensitivity):
             yield(item, True)
         else:
             yield(item, False)
 
-def calculateOne(ps, v1, v2, varNames, maxLevel=3, power=5):
+def calculateOne(ps, v1, v2, varNames, minLevel=0, maxLevel=3, sensitivity=5, power=5):
     pair = (v1, v2)
-    testList = getTestItems(varNames, testPair = pair, maxLevel=maxLevel)
+    testList = getTestItems(varNames, testPair = pair, minLevel=minLevel, maxLevel=maxLevel)
     for item in testList:
         v1 = item[0]
         v2 = item[1]
         conds = item[2]
-        if ps.isIndependent(v1, v2, conds, power=power):
+        #print('calculateOne: v1, v2, conds = ', v1, v2, conds)
+        if ps.isIndependent(v1, v2, conds, power=power, sensitivity=sensitivity):
             yield(item, True)
         else:
             yield(item, False)

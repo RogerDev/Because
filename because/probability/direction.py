@@ -13,7 +13,7 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.neural_network import MLPRegressor
 from sklearn.neighbors import KNeighborsRegressor
 
-def test_direction(rvA, rvB, power=1, N_train=100000, sensitivity=None):
+def test_direction(rvA, rvB, power=1, N_train=2000, sensitivity=None):
     """ When having power parameter less than or equal to 1,
         test the causal direction between variables A and B
         using one of the LiNGAM or GeNGAM pairwise algorithms.
@@ -46,10 +46,23 @@ def test_direction(rvA, rvB, power=1, N_train=100000, sensitivity=None):
         R = math.tanh(rho * avg * 100)
         return R
     else:
-        AtoB = non_linear_direct_test(rvA, rvB, N_train,)
-        BtoA = non_linear_direct_test(rvB, rvA, N_train)
-        R0 = (BtoA - AtoB) / (BtoA + AtoB)
-        R = math.tanh(R0)
+        # We found that averaging multiple small samples (e.g. 2K)
+        # is far more accurate and faster than using large or full
+        # samples.
+        import random
+        newSeed = random.randint(1,1000000)
+        np.random.seed(newSeed)
+        sampSize = 2000
+        #sampSize = N_train
+        cum = 0.0
+        samples = 3 + int(math.log(power, 10) * 20)
+        for i in range(samples):
+            AtoB = non_linear_direct_test(rvA, rvB, sampSize)
+            BtoA = non_linear_direct_test(rvB, rvA, sampSize)
+            R0 = (BtoA - AtoB) / (BtoA + AtoB)
+            Rsamp = math.tanh(R0)
+            cum += Rsamp
+        R = cum / samples
         #print('AtoB, BtoA, R = ', AtoB, BtoA, R, R0)
         return R
 

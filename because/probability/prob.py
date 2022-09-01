@@ -132,6 +132,7 @@ class ProbSpace:
         self.expCache = {} # Expectation cache
         self.rkhsCache = {} # RKHS Cache
         self.mlmodelCache = {}  # MLmodel Cache
+        self.dependCache = {}  # Dependence Cache
         self.dirCache = {} # Direction Cache
 
         self._discreteVars = self._getDiscreteVars()
@@ -1595,9 +1596,14 @@ class ProbSpace:
         """
         if power is None:
             power = self.power
+        cacheKey = (rv1, rv2, tuple(givenSpecs), power, sensitivity)
+        if cacheKey in self.dependCache:
+            return self.dependCache[cacheKey]
         if power == 0 and not givenSpecs:
             # For unconditional with power = 0, return the absolute correlation coef
-            return abs(self.corrCoef(rv1, rv2))
+            dep = abs(self.corrCoef(rv1, rv2))
+            self.dependCache[cacheKey] = dep
+            return dep
         if sensitivity is None:
             sensitivity = 5
         if dMethod == "rcot":
@@ -1611,7 +1617,7 @@ class ProbSpace:
             x = np.array(ss1.ds[rv1])
             y = np.array(ss1.ds[rv2])
             if power < 100:
-                maxRecs = min([10000 * power, ss1.N])
+                maxRecs = min([int(10000 * power), ss1.N])
             else:
                 maxRecs = ss1.N
             #maxRecs = ss1.N
@@ -1621,7 +1627,8 @@ class ProbSpace:
                 try:
                     (p, Sta) = RCoT(x, y, num_f=num_f, num_f2=num_f2, seed=seed)
                 except:
-                    print('ProbSpace.dependence: RCoT Failed.  Using discrete method:', rv1, rv2)
+                    if DEBUG:
+                        print('ProbSpace.dependence: RCoT Failed.  Using discrete method:', rv1, rv2)
                     return self.dependence(rv1, rv2, givenSpecs, power=power,dMethod='d')
             else:
                 z = []
@@ -1636,22 +1643,23 @@ class ProbSpace:
                 try:
                     (Cxy_z, Sta, p) = RCoT(x, y, z, num_f=num_f, num_f2=num_f2, seed=seed)
                 except:
-                    print('ProbSpace.dependence: RCoT Failed.  Using discrete method:', rv1, rv2, givenSpecs)
+                    if DEBUG:
+                        print('ProbSpace.dependence: RCoT Failed.  Using discrete method:', rv1, rv2, givenSpecs)
                     return self.dependence(rv1, rv2, givenSpecs, power=power,dMethod='d')
-            sensitivity = 5
-            assert 1 <= sensitivity <= 10, "sensitivity should be from range [1, 10]"
+            #assert 1 <= sensitivity <= 10, "sensitivity should be from range [1, 10]"
             if sensitivity >= 10:
                 # Use 0.99 as threshold to determine whether a pair of variables are dependent
-                return (1 - p[0]) ** log(0.5, 0.99)
+                dep = (1 - p[0]) ** log(0.5, 0.99)
             else:
                 staScaled = log(Sta / (num_f2**2) + 1)
                 #print('staScaled = ', staScaled)
                 threshold = 11 - sensitivity
                 if staScaled <= threshold:
-                    return 0.5 - math.tanh(threshold - staScaled) / 2
+                    dep =  0.5 - math.tanh(threshold - staScaled) / 2
                 else:
-                    return 0.5 + math.tanh(staScaled - threshold) / 2
-
+                    dep =  0.5 + math.tanh(staScaled - threshold) / 2
+            self.dependCache[cacheKey] = dep
+            return dep
         # Get all the combinations of rv1, rv2, and any givens
         # Depending on power, we test more combinations.  If level >= 100, we test all combos
         # For level = 0, we just test the mean.  For 1, we test the mean + 2 more values.
@@ -1727,7 +1735,7 @@ class ProbSpace:
             if not raw:
                 # Bound it to [0, 1] 
                 dependence = max([min([dependence, 1]), 0])
-            return dependence
+            dep =  dependence
             #H = .36845
             #L = .0272
             #if dependence < L:
@@ -1737,9 +1745,11 @@ class ProbSpace:
             # Bound it to [0, 1] 
             #calDep = max([min([calDep, 1]), 0])
             #return calDep
-
-        print('Cond distr too small: ', rv1, rv2, givenSpecs)
-        return 0.0
+        else:
+            print('Cond distr too small: ', rv1, rv2, givenSpecs)
+            dep =  0.0
+        self.dependCache[cacheKey] = dep
+        return dep
 
     def separateSpecs(self, specs):
         """ Separate bound and unbound variable specs,
