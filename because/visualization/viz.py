@@ -122,6 +122,7 @@ if __name__ == '__main__':
     else:
         numRecs = 0 
         args = argv
+        print('args = ', args)
         dataPath = args[1].strip()
         targets = args[2].strip()
         conditions = args[3].strip()
@@ -160,7 +161,7 @@ if __name__ == '__main__':
                     cfSpec.append(varName)
         if len(args) > 6:
             try:
-                numRecs = int(args[5].strip())
+                numRecs = int(args[6].strip())
             except:
                 pass
         gtype = 'pdf'

@@ -1622,7 +1622,7 @@ class ProbSpace:
         #print('old = ', spec, ', new =', outSpec, ', delta = ', deltaAdjust)
         return outSpec
 
-    def dependence(self, rv1, rv2, givenSpecs=[], power=None, raw=False, seed=None, num_f=100, num_f2=5, sensitivity=5,
+    def dependence(self, rv1, rv2, givenSpecs=[], power=None, raw=False, seed=None, num_f=100, num_f2=5, sensitivity=None,
                    dMethod='rcot'):
         """
         givens is [given1, given2, ... , givenN]
@@ -1645,7 +1645,7 @@ class ProbSpace:
             self.dependCache[cacheKey] = dep
             return dep
         if sensitivity is None:
-            sensitivity = 5
+            sensitivity = 10
         if dMethod == "rcot":
             givenSpecs = self.normalizeSpecs(givenSpecs)
             givensU, givensB = self.separateSpecs(givenSpecs)

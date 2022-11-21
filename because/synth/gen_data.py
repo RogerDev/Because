@@ -97,7 +97,7 @@ class Gen:
         self.reset = None
         self.init = init
 
-    def generate(self, count=1000, reset=False, quiet=False):
+    def generate(self, count=1000, outFile=None, reset=False, quiet=False):
         """
         Function to generate the synthetic dataset and write to an output file
         with the same path as the input file, but with a .csv extension.
@@ -116,12 +116,15 @@ class Gen:
         Returns:
             string: The path to the generated .csv data file.
         """
-        assert self.semFileName is not None, 'Generate requrires that Gen was constructed with a semFilePath.'
         samples = self.samples(count, reset, quiet)
-        # For out file, use the input file name with the .csv extension
-        tokens = self.semFileName.split('.')
-        outFileRoot = str.join('.',tokens[:-1])
-        outFileName = outFileRoot + '.csv'
+        # If outfile not provided, use the input file name with the .csv extension
+        if outFile is None:
+            assert self.semFileName is not None, 'Generate requrires that Gen was constructed with a semFilePath or an output file is specified.'
+            tokens = self.semFileName.split('.')
+            outFileRoot = str.join('.',tokens[:-1])
+            outFileName = outFileRoot + '.csv'
+        else:
+            outFileName = outFile
         outLines = []
         outLine = str.join(',', self.varNames) + '\n'
         outLines.append(outLine)
