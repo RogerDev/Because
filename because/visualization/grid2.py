@@ -35,10 +35,9 @@ class Grid:
                     nVals = len(allVals)
                     #print('nVals = ', nVals)
                     if nVals <= nSamples:
-                        testVals = allVals
-                        sampleIndxs = list(range(0, nVals))
-                        # We may return fewer samples than requested
-                        nSamples = len(sampleIndxs)
+                        # Use all values
+                        for val in allVals:
+                            vSpace.append((val, val))
                     else:
                         # Let's try and reduce the number of values.
                         reduction = int(nVals / nSamples)
@@ -48,11 +47,11 @@ class Grid:
                         nSamples = len(sampleIndxs)
                         testVals = [allVals[indx] for indx in sampleIndxs]
                         #print('reduction = ', reduction, ', testVals = ', len(testVals), testVals)
-                    for j in range(len(testVals)-1):
-                        testVal = testVals[j]
-                        nextVal = testVals[j+1]
-                        nominal = (testVal + nextVal) * .5
-                        vSpace.append((nominal, testVal, nextVal))
+                        for j in range(len(testVals)-1):
+                            testVal = testVals[j]
+                            nextVal = testVals[j+1]
+                            nominal = (testVal + nextVal) * .5
+                            vSpace.append((nominal, testVal, nextVal))
             else:
                 # Continuous.  Use even ranges.
                 testVals = list(np.linspace(minvs[i], maxvs[i], numPts + 1))[:-1]

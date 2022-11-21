@@ -24,7 +24,7 @@ def numQueries(d):
             condQ += C(d,p) * C(d-p, q)
     return 1 + jointQ + condQ
 
-if __name__ == __main__:
+if __name__ == '__main__':
     print(numQueries(3))
-    print(numQueries(12))
+    print(numQueries(8))
     print(numQueries(32))

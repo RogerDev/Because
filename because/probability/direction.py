@@ -12,13 +12,43 @@ from because.probability.rff.rffgpr import RFFGaussianProcessRegressor
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.neural_network import MLPRegressor
 from sklearn.neighbors import KNeighborsRegressor
+from sklearn.neighbors import KNeighborsClassifier
+
+def balance(A, B):
+    newA = []
+    newB = []
+    bdict = {}
+    N = A.shape[0]
+    bvals = set(B)
+    card = len(bvals)
+    if card > 2:
+        return (A, B, False)
+    return (A, B, True)
+    for v in bvals:
+        bdict[v] = 0
+    for v in B:
+        bdict[v] += 1
+    proportions = {}
+    maxProp = 0
+    for v in bvals:
+        prop = bdict[v] / N
+        if prop > maxProp:
+            maxProp = prop
+        proportions[v] = bdict[v] / N
+    for i in range(N):
+        bv = B[i]
+        av = A[i]
+        for j in range(int(round(maxProp / proportions[bv], 0))):
+            newA.append(av)
+            newB.append(bv)
+    return (np.array(newA), np.array(newB), True)
 
 def test_direction(rvA, rvB, power=1, N_train=2000, sensitivity=None):
-    """ When having power parameter less than or equal to 1,
+    """ When having power parameter less than 1,
         test the causal direction between variables A and B
         using one of the LiNGAM or GeNGAM pairwise algorithms.
 
-        When having power larger than 1, use non-linear method
+        When having power larger than 0, use non-linear method
         to test the causal direction. N_train determines at most
         how many samples would be used to train the non-linear
         model. Currently test uses KNN algorithm.
@@ -50,15 +80,35 @@ def test_direction(rvA, rvB, power=1, N_train=2000, sensitivity=None):
         # is far more accurate and faster than using large or full
         # samples.
         import random
-        newSeed = random.randint(1,1000000)
-        np.random.seed(newSeed)
-        sampSize = 2000
-        #sampSize = N_train
+        #newSeed = random.randint(1,1000000)
+        #np.random.seed(newSeed)
+        sampSize = N_train
         cum = 0.0
+        N = len(rvA)
         samples = 3 + int(math.log(power, 10) * 20)
+        if N < sampSize * 2:
+            sampSize = int(N / 2)
+        rvA_a = np.array(rvA)
+        rvB_a = np.array(rvB)
         for i in range(samples):
-            AtoB = non_linear_direct_test(rvA, rvB, sampSize)
-            BtoA = non_linear_direct_test(rvB, rvA, sampSize)
+            if sampSize < N:
+                inds = np.random.choice(N, size=sampSize, replace=False)
+                sA = rvA_a[inds]
+                sB = rvB_a[inds]
+            else:
+                sA = rvA_a
+                sB = rvB_a
+            #AtoB = non_linear_direct_test(sA, sB)
+            #BtoA = non_linear_direct_test(sB, sA)
+            try:
+            #    pass
+                AtoB = non_linear_direct_test(sA, sB)
+                BtoA = non_linear_direct_test(sB, sA)
+            except:
+                continue
+            if BtoA == 0 and AtoB == 0:
+                continue
+            #print('AtoB, BtoA = ', AtoB, BtoA)
             R0 = (BtoA - AtoB) / (BtoA + AtoB)
             Rsamp = math.tanh(R0)
             cum += Rsamp
@@ -66,27 +116,29 @@ def test_direction(rvA, rvB, power=1, N_train=2000, sensitivity=None):
         #print('AtoB, BtoA, R = ', AtoB, BtoA, R, R0)
         return R
 
-def non_linear_direct_test(A, B, N_train=100000):
-
-    s1 = np.array(A).reshape(-1, 1)
-    s2 = np.array(B)
+def non_linear_direct_test(A, B):
+    A, B, isCat = balance(A,B)
+    s1 = A.reshape(-1, 1)
+    s2 = B
 
     N = s1.shape[0]
 
-    if N_train < N:
-        inds = np.random.choice(N, size=N_train, replace=False)
-        s1 = s1[inds]
-        s2 = s2[inds]
-        A = np.array(A)[inds]
-
     #reg = RFFRidgeRegression(rff_dim=100)
-
-    reg = KNeighborsRegressor(n_neighbors=10)
+    if isCat and False:
+        reg = KNeighborsClassifier(n_neighbors=10)
+        s2 = np.int_(s2)
+    else:
+        reg = KNeighborsRegressor(n_neighbors=10)
 
     reg.fit(s1, s2)
 
-    residual = s2 - reg.predict(s1)
+    preds = reg.predict(s1)
+    residual = s2 - preds
+    #print('N = ', N)
+    #for i in range(10):
+    #    print('s1, s2, preds = ', s1[i], s2[i], preds[i])
 
-    num_f2 = 5
-    (p, Sta) = RCoT(A, residual, num_f2=num_f2, seed = 1)
+    num_f2 = 8
+    #(p, Sta) = RCoT(A, residual, num_f2=num_f2, seed = 1)
+    (p, Sta) = RCoT(A, residual, num_f2=num_f2)
     return math.log(Sta / (num_f2 ** 2) + 1)

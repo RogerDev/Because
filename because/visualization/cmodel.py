@@ -7,27 +7,24 @@ if '.' not in path:
 import time
 from math import log, tanh, sqrt, sin, cos, e
 
-import numpy as np
-import matplotlib
-from matplotlib import cm
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
-import matplotlib.animation as anim
 import networkx as nx
 
-from because.causality import rv
 from because.synth import read_data, gen_data
 from because.probability.prob import ProbSpace
 from because.causality import cdisc
-from because.causality import cgraph
+from because.utils import vprint
 
-def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], controlFor=[], gtype='pdf', probspace=None, cg=None, enhance=True, 
+def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], controlFor=[], gtype='pdf', probspace=None, cg=None, edgeLabels=None, enhance=True, 
         power=5, maxLevel=2, sensitivity=5, verbosity=3):
     assert (cg is not None and probspace is None and not dataPath) or \
             (cg is None and probspace is not None and not dataPath) or \
             (cg is None and probspace is None and dataPath and numRecs > 0), \
             'cmodel.show: Must provide a cGraph, or ProbSpace instance, or a dataPath and numRecs.' 
     #fig = plt.figure()
+    if edgeLabels == 'None':
+        # Default edge labels to correlation
+        edgeLabels = 'corr'
     fig, axs = plt.subplots(1,1)
     ax = axs
     ax.set_axis_off()
@@ -39,6 +36,7 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], controlFor=[], gtyp
         tokens = dataPath.split('.')
         ds = None # The dataset in dictionary form
         assert len(tokens) == 2 and (tokens[1] == 'py' or tokens[1] == 'csv'), 'Cmodel.show: dataPath must have a .py or .csv extension.  Got: ' + dataPath
+        vprint(3, verbosity, 'cmodel.show: Processing data file = ', dataPath)
         if tokens[1] == 'py':
             # py SEM file
             assert numRecs > 0, 'Cmodel.show: For synthetic data (i.e. .py extension) numRecs must be positive'
@@ -50,9 +48,12 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], controlFor=[], gtyp
             ds = r.read()
         prob1 = ProbSpace(ds, power=power)
     elif cg is None:
+        # Use ProbSpace
         prob1 = probspace
     else:
+        # Use cGraph
         prob1 = cg.prob
+        targetSpec = cg.rvList # Ignore targetSpec when cg provided.
     if not targetSpec:
         targets = prob1.getVarNames()
     else:
@@ -60,34 +61,50 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], controlFor=[], gtyp
         targets = [spec[0] for spec in targetSpec]
     
     if cg is None:
+        vprint(3, verbosity, 'cmodel.show: Performing Discovery.')
         # If we didn't get a cgraph, discover one.
         cg = cdisc.discover(prob1, varNames=targets, maxLevel=maxLevel, power=power, sensitivity=sensitivity, verbosity=verbosity)
     
     edges = []
-    edgeLabels = {}
+    edgeLabelDict = {}
     edgeVals = {}
 
+    vprint(3, verbosity, 'cmodel.show: Analyzing Graph Relations.')
     rvs = cg.getRVs()
+    if edgeLabels == 'mde':
+        elText = 'Maximum Direct Effect'
+    else:
+        elText = 'Correlation'
+    vprint(4, verbosity, 'Showing', elText, 'for edge labels')
     for rv in rvs:
         var = rv.name
         parents = rv.parentNames
         for parent in parents:
             link = (parent, var)
-            effect = cg.MDE(parent, var)
             corr = prob1.corrCoef(parent, var)
-            if corr < 0:
-                effect *= -1
+            if edgeLabels == 'mde':
+                effect = cg.MDE(parent, var)
+                if corr < 0:
+                    effect *= -1
+            else:
+                effect = corr
             edgeVals[link] = effect
-            edgeLabels[link] = str(round(effect, 2))
-            dir = prob1.testDirection(parent, var, power=power)
+            edgeLabelDict[link] = str(round(effect, 2))
             edges.append(link)
+            # Discovery puts the directional rho as a edge property.  Retrieve it.
+            dir = cg.getEdgeProp(link, 'dir_rho')
+            if dir is None:
+                vprint(2, verbosity, 'cmodel.show: Missing edge property "dir_rho"')
+                continue
             if abs(dir) < .1:
                 # Very weak directional signal.  Add a reverse link to graph.
+                vprint(4, verbosity, 'cmodel.show: Adding bidirectional link for', link)
                 v1, v2 = link
                 edges.append((v2, v1))
-                edgeLabels[(v2, v1)] = ''
-                edgeVals[(v2, v1)] = effect
+                edgeLabelDict[(v2, v1)] = ''
+                edgeVals[(v2, v1)] = 0
     # Build networkx graph
+    vprint(3, verbosity, 'cmodel.show: Producing graphics.')
     gr = nx.DiGraph()
     gr.add_nodes_from(targets)
     gr.add_edges_from(edges)
@@ -103,7 +120,7 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], controlFor=[], gtyp
         elif val < 0:
             color = cmap(.4 + val * .4)
         else:
-            color = [0,0,0,0]
+            color = [.5,.5,.5,.5]
         return tuple(list(color))
 
     edgeColors = []
@@ -124,13 +141,14 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], controlFor=[], gtyp
         print('Map = ',)
         for edge in gr.edges():
             v1, v2 = edge
-            print('  ', v1, '-->', v2, '(', round(edgeVals[(v1, v2)], 3), ')')
+            strength = edgeVals[(v1, v2)]
+            if edgeLabelDict[edge] != '': # Eliminate reverse links
+                print('  ', v1, '-->', v2, '(', round(strength, 3), ')')
     nx.draw(gr, pos=pos, ax=ax, with_labels=True, node_size=1500, arrows=True, arrowsize=30, node_color=nodeColors, edge_color=edgeColors, width=2.0)
-    nx.draw_networkx_edge_labels(gr, pos, ax=ax, edge_labels=edgeLabels)
+    nx.draw_networkx_edge_labels(gr, pos, ax=ax, edge_labels=edgeLabelDict)
     plt.title("Causal Relationships", fontsize=16)
     end = time.time()
-    if verbosity >= 2:
-        print('Elapsed = ', round(end - start, 0))
+    vprint(2, verbosity, 'cmodel.show: Elapsed = ', round(end - start, 0))
     plt.show()
 
 if __name__ == '__main__':

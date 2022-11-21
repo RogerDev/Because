@@ -6,7 +6,7 @@ Implements class cGraph for defining and analyzing causal models.
 import math
 from termios import IMAXBEL
 
-import networkx
+import networkx as nx
 import numpy as np
 
 from because.probability import independence
@@ -16,7 +16,6 @@ from because.probability import direction
 from because.probability.standardiz import standardize
 from because.visualization import grid2 as grid
 
-VERBOSE = 1
 DEBUG = False
 # rvList is a list of random variable (rv) objects
 # data is a dictionary keyed by random variable name, containing a list of observed values.
@@ -41,7 +40,7 @@ class cGraph:
 
         Must include rvList and either data or ps.  ProbSpace contains its own data.
     """
-    def __init__(self, rvList, data={}, ps=None, power=None):
+    def __init__(self, rvList, data={}, ps=None, power=None, verbosity=1):
         assert (data or ps) and not (data and ps), 'cGraph: Must pass either data or ps (ProbSpace object), but not both.'
         if power is None:
             if ps:
@@ -50,7 +49,8 @@ class cGraph:
                 self.power = power
         else:
             self.power = power
-        self.g = networkx.DiGraph()
+        self.verbosity = verbosity
+        self.g = nx.DiGraph()
         self.rvDict = {}
         for rv in rvList:
             if rv.name in self.rvDict.keys():
@@ -77,6 +77,7 @@ class cGraph:
                 self.edgeDict[d].append(edge)
             else:
                 self.edgeDict[d] = [edge]
+        self.edgeProps = {}
         # Create a probability space object for later use, if one wasn't passed in.
         if not ps:
             self.prob = ProbSpace(self.data, power=self.power)
@@ -146,7 +147,53 @@ class cGraph:
         d = self.prob.distr(varName)
         print('stats(', varName,':', 'mean =', d.E(), ', stDev =', d.stDev(), ', skew =',  d.skew(), ', kurtosis =', d.kurtosis())
 
-    def reverseLink(self, source, dest):
+    def addLink(self, source, dest, verbosity=None):
+        if verbosity is None:
+            verbosity = self.verbosity
+        assert source in self.rvDict, 'cGraph.addLink: Variable ' + source + ' not found. Link not added.'
+        assert dest in self.rvDict, 'cGraph.addLink: Variable ' + dest + ' not found. Link not added.'
+        rv1 = self.rvDict[source]
+        rv2 = self.rvDict[dest]
+        pList = rv2.parentNames
+        if source in pList:
+            if verbosity >= 1:
+                print('cGraph.addLink: Link already exists (' + source + ', ' + dest + ').  No action taken.')
+            return
+        rv2.parentNames.append(source)
+        self.g.add_edge(source, dest)
+        self.edgeDict[source].append((source, dest))
+        self.edgeDict[dest].append((source, dest))
+        loops = list(nx.simple_cycles(self.g))
+        if loops:
+            print('cGraph.addLink: This link (' + source + ',' + dest + ') created a loop in the graph= ' + str(loops) + '.  Removing link.')
+            self.removeLink(source, dest, verbosity=verbosity)
+            return
+        if self.verbosity >= 2:
+            print('cGraph.addLink: Link ('+ source + ',' + dest + ') successfully added')
+
+    def removeLink(self, source, dest, verbosity=None):
+        if verbosity is None:
+            verbosity = self.verbosity
+        assert source in self.rvDict, 'cGraph.removeLink: Variable ' + source + ' not found. No change made.'
+        assert dest in self.rvDict, 'cGraph.removeLink: Variable ' + dest + ' not found. No change made.'
+        rv1 = self.rvDict[source]
+        rv2 = self.rvDict[dest]
+        pList = rv2.parentNames
+        if source not in pList:
+            if verbosity >= 1:
+                print('cGraph.removeLink: Link doesn\'t exists (' + source + ', ' + dest + ').  No action taken.')
+        rv2.parentNames.remove(source)
+        self.g.remove_edge(source, dest)
+        self.edgeDict[source].remove((source, dest))
+        self.edgeDict[dest].remove((source, dest))
+        if self.verbosity >= 2:
+            print('cGraph.addLink: Link ('+ source + ',' + dest + ') successfully removed')
+
+    def reverseLink(self, source, dest, verbosity=None):
+        if verbosity is None:
+            verbosity = self.verbosity
+        assert source in self.rvDict, 'cGraph.reverseLink: Variable ' + source + ' not found. No change made.'
+        assert dest in self.rvDict, 'cGraph.reverseLink: Variable ' + dest + ' not found. No change made.'
         rv1 = self.rvDict[source]
         rv2 = self.rvDict[dest]
         if rv1.name in rv2.parentNames:
@@ -158,6 +205,10 @@ class cGraph:
             self.edgeDict[source].append((dest, source))
             self.edgeDict[dest].remove((source,dest))
             self.edgeDict[dest].append((dest, source))
+            if verbosity >=2:
+                print('cGraph.reverseLink: (', source, dest, ') has been changed to (', dest, source, ')')
+        else:
+            print('cGraph.reverseLink: Link(', source, dest, ') not found.  No changes made')
 
     def isExogenous(self, varName):
         """
@@ -189,9 +240,26 @@ class cGraph:
         """
         return list(self.g.edges)
 
+    def getEdgeProps(self, edge):
+        props = self.edgeProps.get(edge, {})
+        return props
+
+    def getEdgeProp(self, edge, propName):
+        props = self.getEdgeProps(edge)
+        prop = props.get(propName, None)
+        return prop
+
+    def setEdgeProp(self, edge, propName, val):
+        if edge in self.edgeProps:
+            props = self.edgeProps[edge]
+            props[propName] = val
+        else:
+            props = {propName: val}
+            self.edgeProps[edge] = props
+
     def getAdjacencies(self, varName):
         """
-        Returns parents and children of a given variable
+        Returns links containing parents and children of a given variable
 
         Args:
             varName (string): Variable name.
@@ -202,6 +270,21 @@ class cGraph:
         if varName in self.edgeDict.keys():
             return self.edgeDict[varName]
         return []
+
+    def getAdjacentVars(self, varName):
+        """
+        Returns parents and children of a given variable
+
+        Args:
+            varName (string): Variable name.
+
+        Returns:
+            list: List of variable names that are either parents or children
+            of the given varName.
+        """
+        parents = self.getParents(varName)
+        children = self.getChildren(varName)
+        return parents + children
 
     def getParents(self, varName):
         """
@@ -219,6 +302,23 @@ class cGraph:
             if a[1] == varName:
                 parents.append(a[0])
         return parents
+
+    def getChildren(self, varName):
+        """
+        Return children of the given variable
+
+        Args:
+            varName (string): Variable Name.
+
+        Returns:
+            list: List of child names.
+        """
+        children = []
+        adj = self.getAdjacencies(varName)
+        for a in adj:
+            if a[0] == varName:
+                children.append(a[1])
+        return children
 
     def isChild(self, parentVar, childVar):
         """
@@ -362,7 +462,7 @@ class cGraph:
                 if node1 == node2 or not self.rvDict[node2].isObserved:
                     continue
                 isAdjacent = self.isAdjacent(node1, node2)
-                isSeparated = not isAdjacent and networkx.d_separated(self.g, {node1}, {node2}, {})
+                isSeparated = not isAdjacent and nx.d_separated(self.g, {node1}, {node2}, {})
                 dep = self.makeDependency(node1, node2, None, not isSeparated)
                 deps.append(dep)
                 for c in cNodes:
@@ -377,7 +477,7 @@ class cGraph:
                             break
                     if not allObserved:
                         continue
-                    isSeparated = not isAdjacent and networkx.d_separated(self.g, {node1}, {node2}, set(c))
+                    isSeparated = not isAdjacent and nx.d_separated(self.g, {node1}, {node2}, set(c))
                     dep = self.makeDependency(node1, node2, list(c), not isSeparated)
                     deps.append(dep)
         #print('deps = ', deps)
@@ -449,7 +549,7 @@ class cGraph:
         return 1 - self.testIndependence(x, y, z, power=power, sensitivity=sensitivity)
 
 
-    def TestModel(self, data=None, order=3, power=None, sensitivity=5, deps=None, edges=None):
+    def TestModel(self, data=None, order=3, power=None, sensitivity=5, deps=None, edges=None, testDirections=True, verbosity=None):
         """
         Test the model for consistency with a set of data.
         Format for data is {variableName: [variable value]}.
@@ -488,6 +588,8 @@ class cGraph:
         """
         if power is None:
             power = self.power
+        if verbosity is None:
+            verbosity = self.verbosity
         warningPenalty = .0025
         ps = self.prob
         numTestTypes = 4
@@ -501,7 +603,7 @@ class cGraph:
         if deps is None:
             # No dependencies passed in.  Compute them here.
             deps = self.computeDependencies(order)
-        if VERBOSE:
+        if verbosity >= 2:
             print('Testing Model for', len(deps), 'Independencies')
         for dep in deps:
             x, y, z, isDep = dep
@@ -509,7 +611,8 @@ class cGraph:
                 z = []
             #pval = independence.test(ps, [x], [y], z, power=power)
             pval = self.testIndependence(x, y, z, power=power, sensitivity=sensitivity)
-            print(x, y, z)
+            if verbosity >= 4:
+                print('   Testing', x, y, z)
             errStr = None
             warnStr = None
             testType = -1
@@ -520,7 +623,7 @@ class cGraph:
             else:
                 testType = 2
             if testType == 2:
-                pval = self.testIndependence(x, y, z, power=power, sensitivity=10)
+                pval = self.testIndependence(x, y, z, power=power, sensitivity=sensitivity)
             else:
                 pval = self.testIndependence(x, y, z, power=power, sensitivity=sensitivity)
 
@@ -538,42 +641,44 @@ class cGraph:
                 else:
                     warnStr = 'Warning (Type 1 -- Unexpected dependence) -- Expected: ' + self.formatDependency(dep) + ' but some dependence was detected. P-val = ' + str(pval)
             if errStr:
-                if VERBOSE:
-                    print('***', errStr)
+                if verbosity >= 3:
+                    print('   ***', errStr)
                 errors.append((testType, [x], [y], list(z), isDep, pval, errStr))
                 numErrsPerType[testType] += 1
             if warnStr:
-                if VERBOSE:
-                    print('*', warnStr)
+                if verbosity >= 3:
+                    print('   *', warnStr)
                 warnings.append((testType, [x], [y], list(z), isDep, pval, warnStr))
                 numWarnsPerType[testType] += 1
-            elif VERBOSE:
-                print('.',)
+            elif verbosity >= 4:
+                print('   .',)
         # Now test directionalities
-        testType = 3
-        dresults = self.testAllDirections(edges = edges, power=power)
-        derrs = 0
-        for dresult in dresults:
-            isError, cause, effect, rho = dresult
-            if isError:
-                derrs += 1
-                if abs(rho) < .0001:
-                    resStr = 'True direction could not be verified.'
-                    warnStr = 'Warning (Type 3 -- Incorrect Causal Direction) between ' + cause + ' and ' + effect + '. ' + resStr + '.  Rho = ' + str(rho)
-                    warnings.append((testType, [cause], [effect], [], False, rho, warnStr))
-                    if VERBOSE:
-                        print('*', warnStr)
-                else:
-                    resStr = 'Direction appears to be reversed.'
-                    errStr = 'Error (Type 3 -- Incorrect Causal Direction) between ' + cause + ' and ' + effect + '. ' + resStr + '.  Rho = ' + str(rho)
-                    errors.append((testType, [cause], [effect], [], False, rho, errStr))
-                    if VERBOSE:
-                        print('***', errStr)
-                    numErrsPerType[testType] += 1
-            numTestsPerType[testType] += 1
+        dresults = []
+        if testDirections:
+            testType = 3
+            dresults = self.testAllDirections(edges = edges, power=power)
+            derrs = 0
+            for dresult in dresults:
+                isError, cause, effect, rho = dresult
+                if isError:
+                    derrs += 1
+                    if abs(rho) < .0001:
+                        resStr = 'True direction could not be verified.'
+                        warnStr = 'Warning (Type 3 -- Incorrect Causal Direction) between ' + cause + ' and ' + effect + '. ' + resStr + '.  Rho = ' + str(rho)
+                        warnings.append((testType, [cause], [effect], [], False, rho, warnStr))
+                        if verbosity >= 3:
+                            print('   *', warnStr)
+                    else:
+                        resStr = 'Direction appears to be reversed.'
+                        errStr = 'Error (Type 3 -- Incorrect Causal Direction) between ' + cause + ' and ' + effect + '. ' + resStr + '.  Rho = ' + str(rho)
+                        errors.append((testType, [cause], [effect], [], False, rho, errStr))
+                        if verbosity >= 3:
+                            print('   ***', errStr)
+                        numErrsPerType[testType] += 1
+                numTestsPerType[testType] += 1
         confidence = self.scoreModel(numTestsPerType, numErrsPerType, numWarnsPerType)
         numTotalTests = len(deps) + len(dresults)
-        if VERBOSE:
+        if verbosity >= 2:
             print('Model Testing Completed with', len(errors), 'error(s) and', len(warnings), ' warning(s).  Confidence = ', round(confidence * 100, 1), '%')
         return (confidence, numTotalTests, numTestsPerType, numErrsPerType, numWarnsPerType, errors, warnings)
 
@@ -665,12 +770,14 @@ class cGraph:
             results.append((isError, x, y, rho))
         return results
 
-    def causalOrder(self, power=1):
+    def causalOrder(self, power=None, sensitivity=5):
+        if power is None:
+            power = self.power
         maxTries = 10
         cOrder = []
         correct = True
         while len(cOrder) < len(self.rvList):
-            exos = self.findExogenous(exclude=cOrder)
+            exos = self.findExogenous(exclude=cOrder, sensitivity=sensitivity)
             cOrder += exos
         for attempt in range(maxTries):
             correct = True
@@ -683,7 +790,7 @@ class cGraph:
                     var3 = cOrder[j]
                     if var3 == var1 or var3 == var2:
                         continue
-                    dep = self.testDependence(var1, var2, [var3], power=power)
+                    dep = self.testDependence(var1, var2, [var3], power=power, sensitivity=sensitivity)
                     if dep < lowestDep:
                         lowestDep = dep
                         bestParent = var3
@@ -699,7 +806,7 @@ class cGraph:
             print('cGraph.causalOrder: Could not converge to a definite order.')
         return cOrder
 
-    def findExogenous(self, exclude=[], power=None, N_train=100000, sensitivity=None):
+    def findExogenous(self, exclude=[], power=None, N_train=100000, sensitivity=5):
         if power is None:
             power = self.power
 
@@ -718,7 +825,7 @@ class cGraph:
                 y = rvList[j]
                 if x == y or y in exclude:
                     continue
-                R = self.testDirection(x, y, power, N_train, sensitivity=sensitivity)
+                R = self.testDirection(x, y, power, N_train, power=power)
 
                 if R > 0:
                     leastCausal = y
@@ -735,7 +842,7 @@ class cGraph:
             else:
                 isExo = True
                 for exo in exos:
-                    pval = self.testIndependence(var, exo, power=power)
+                    pval = self.testIndependence(var, exo, power=power, sensitivity=sensitivity)
                     #print('ind ', var, '-', exo, ' = ', pval)
                     if pval < .5:
                         isExo = False
@@ -747,13 +854,13 @@ class cGraph:
                     break
         return exos
 
-    def findChildVars(self, parentList, power=1):
+    def findChildVars(self, parentList, power=1, sensitivity=5):
         outMap = []
         for var in self.rvList:
             for pvar in parentList:
                 if var in parentList:
                     continue
-                pval = self.testIndependence(pvar, var, power=power)
+                pval = self.testIndependence(pvar, var, power=power, sensitivity=sensitivity)
                 isInd = False
                 if pval > .5:
                     isInd = True
@@ -763,7 +870,7 @@ class cGraph:
                 outMap.append((pvar, var))
         return outMap
 
-    def intervene(self, targetRV, doList, controlFor = [], power=1):
+    def intervene(self, targetRV, doList, controlFor = [], power=None, verbosity=None):
         """ 
         Implements Intverventions (Level2 of Ladder of Causality)
         of the form P(Y | do(X1=x1),Z).  That is, the Probability
@@ -774,12 +881,18 @@ class cGraph:
         e.g., as to the probability of a value, or the expected value
         (see Probability/Prob.py and pdf.py)
         """
+        if power is None:
+            power = self.power
+        if verbosity is None:
+            verbosity = self.verbosity
+        if verbosity >= 3:
+            print('cGraph.intervene: target, doList, controlFor = ', targetRV, doList, controlFor)
         # Filter out any interventions for which the target is not a descendant of the
         # intevening variable.  The effect of those interventions will alsways be zero.
         doListF = []
         for item in doList:
             rv, value = item
-            if targetRV in networkx.descendants(self.g, rv):
+            if targetRV in nx.descendants(self.g, rv):
                 # It is a descendant.  Keep it.
                 doListF.append(item)
         if not doListF:
@@ -789,6 +902,8 @@ class cGraph:
         # Find all the backdoor paths and identify the minimum set of variables (Z) that
         # block all such paths without opening any new paths.
         blockingSet = self.findBackdoorBlockingSet(doListF[0][0], targetRV)
+        if verbosity >= 3:
+            print('cGraph.intervene: backward blocking set = ', blockingSet)
         # Make sure that none of our intervention variables is in the blocking set.
         for item in doList:
             if item[0] in blockingSet:
@@ -796,14 +911,18 @@ class cGraph:
         # Now we compute the probability distribution of Y conditionalized on all of the blocking
         # variables.
         given = doList + blockingSet + controlFor
+        if verbosity >= 3:
+            print('cGraph.intervene: ProbSpace query = distr(', targetRV, given, ')')
         distr = self.prob.distr(targetRV, given, power=power)
         # We return the probability distribution
         return distr
 
-    def ACE(self, cause, effect, power=1):
+    def ACE(self, cause, effect, power=None):
         """
         Average Causal Effect of cause on effect.
         """
+        if power is None:
+            power = self.power
         causeDistr = self.prob.distr(cause)
         causeMean = causeDistr.E()
         causeStd = causeDistr.stDev()
@@ -824,10 +943,12 @@ class cGraph:
         return final
 
 
-    def CDE(self, cause, effect, power=1):
+    def CDE(self, cause, effect, power=None):
         """
         Controlled Direct Effect of cause on effect
         """
+        if power is None:
+            power = self.power
         causeDistr = self.prob.distr(cause)
         causeMean = causeDistr.E()
         causeStd = causeDistr.stDev()
@@ -852,14 +973,23 @@ class cGraph:
         final = float(np.mean(tr))
         return final
 
-    def MDE(self, cause, effect, power=None):
+    def MCE(self, cause, effect, power=None, verbosity=None):
         """
-        Maximum Direct Effect of cause on effect
-        Returns the Maximum effect of cause on effect.  This works
-        for categorical as well as numeric variables.
+        Maximum Causal Effect.
+        Returns the Maximum difference in the effect variable for all values of cause.
+        This works for categorical as well as numeric variables.
+        This includes direct and indirect relationships between cause and effect.
+        For only direct relationships, see MDE.
         """
         if power is None:
             power = self.power
+        if verbosity is None:
+            verbosity = self.verbosity
+
+        # Get the blocking set for the forward causal path
+        fdBlocking = self.findFrontdoorBlockingSet(cause, effect)
+        if verbosity >= 3:
+            print('cGraph.MCE: forward blocking set =', fdBlocking)
         g = grid.Grid(self.prob, [cause], numPts=10)
         testpoints = g.makeGrid()
         numPoints = g.getTestCount()
@@ -872,19 +1002,20 @@ class cGraph:
             testpoint = testspec[0]
             if len(testpoint) == 2:
                 nom, val = testpoint
-                effDistr = self.intervene(effect, [(cause, val)])
+                effDistr = self.intervene(effect, [(cause, val)], fdBlocking, power=power, verbosity=verbosity)
                 effVal = effDistr.E()
-                    
             else:
                 nom, lowval, highval = testpoint
                 if lowval:
                     val = lowval
                 else:
                     val = highval
-                effDistr = self.intervene(effect, [(cause, val)])
+                effDistr = self.intervene(effect, [(cause, val)], fdBlocking, power=power, verbosity=verbosity)
             if effDistr is None:
                 continue
             effVal = effDistr.E()
+            if verbosity >= 3:
+                print('cGraph.MCE: effVal for causeVal ', val, '=', effVal)
             if effVal < minv:
                 minv = effVal
                 iMin = i
@@ -893,16 +1024,82 @@ class cGraph:
                 iMax = i
             i += 1        
         effDistr = self.prob.distr(effect)
-        # Use 90p - 10p as the effective range (imperfect)
-        eff10 = effDistr.percentile(10)
-        eff90 = effDistr.percentile(90)
-        effRange = eff90 - eff10
-        if effRange == 0:
-            # In case 10p and 90p are the same (e.g. imbalanced binary vars),
-            # Use the min and the max.
-            minEff = effDistr.minVal()
-            maxEff = effDistr.maxVal()
-            effRange = maxEff - minEff
+        # Use 99p - 1p as the effective range, unless discrete
+        if self.prob.isDiscrete(effect):
+            efflow = effDistr.minVal()
+            effhigh = effDistr.maxVal()
+        else:
+            efflow = effDistr.percentile(1)
+        effhigh = effDistr.percentile(99)
+        effRange = effhigh - efflow
+        cRange = maxv - minv
+        if effRange > 0:
+            mce = cRange / effRange
+        elif cRange > 0:
+            mce = 1
+        else:
+            mce = 0
+        # Bound at 1.0.  It is possible to be over 1 due to the inexactness of the denominator.
+        mce = min([mce, 1.0])
+        #print('iMin, iMax, minv, maxv, mde = ',iMin, iMax, minv, maxv, mde)
+        return mce
+
+    def MDE(self, cause, effect, power=None, verbosity=None):
+        """
+        Maximum Direct Causal Effect (controlled).
+        Returns the Maximum difference in the effect variable for all values of cause,
+        when all indirect paths are blocked
+        This works for categorical as well as numeric variables.
+        This includes direct and indirect relationships between cause and effect.
+        For only direct relationships, see MDE.
+        """
+        if power is None:
+            power = self.power
+        if verbosity is None:
+            verbosity = self.verbosity
+        g = grid.Grid(self.prob, [cause], numPts=10)
+        testpoints = g.makeGrid()
+        numPoints = g.getTestCount()
+        minv = 1000000000
+        maxv = -1000000000
+        iMin = None
+        iMax = None
+        i = 0
+        for testspec in testpoints:
+            testpoint = testspec[0]
+            if len(testpoint) == 2:
+                nom, val = testpoint
+                effDistr = self.intervene(effect, [(cause, val)], power=power, verbosity=verbosity)
+                effVal = effDistr.E()
+                    
+            else:
+                nom, lowval, highval = testpoint
+                if lowval:
+                    val = lowval
+                else:
+                    val = highval
+                effDistr = self.intervene(effect, [(cause, val)], power=power, verbosity=verbosity)
+            if effDistr is None:
+                continue
+            effVal = effDistr.E()
+            if verbosity >= 3:
+                print('cGraph.MDE: effVal for causeVal', val, '=', effVal)
+            if effVal < minv:
+                minv = effVal
+                iMin = i
+            if effVal >= maxv:
+                maxv = effVal
+                iMax = i
+            i += 1        
+        effDistr = self.prob.distr(effect)
+        # Use 99p - 1p as the effective range, unless discrete
+        if self.prob.isDiscrete(effect):
+            efflow = effDistr.minVal()
+            effhigh = effDistr.maxVal()
+        else:
+            efflow = effDistr.percentile(1)
+        effhigh = effDistr.percentile(99)
+        effRange = effhigh - efflow
         cRange = maxv - minv
         if effRange > 0:
             mde = cRange / effRange
@@ -915,7 +1112,7 @@ class cGraph:
         #print('iMin, iMax, minv, maxv, mde = ',iMin, iMax, minv, maxv, mde)
         return mde
 
-    def findBackdoorBlockingSet(self, source, target):
+    def findBackdoorBlockingSet(self, source, target, verbosity=None):
         """ 
         Find the minimal set of nodes that block all backdoor paths from source
         to target.
@@ -923,11 +1120,13 @@ class cGraph:
         cacheKey = (source, target)
         if cacheKey in self.bdCache.keys():
             return self.bdCache[cacheKey]
+        if verbosity is None:
+            verbosity = self.verbosity
         maxBlocking = 3
         bSet = []
         # find all paths from parents (including ancestors) of source to target.
         parents = self.getParents(source)
-        if DEBUG:          
+        if verbosity >= 3:          
             print('findBackdoorBloockingSet: parents = ', parents)
         # Create a graph view that removes the links from the source to its parents
         def includeEdge(s, d):
@@ -936,18 +1135,15 @@ class cGraph:
                 return False
             return True
         pathNodes = {}
-        vg = networkx.subgraph_view(self.g, filter_edge=includeEdge)
+        vg = nx.subgraph_view(self.g, filter_edge=includeEdge)
         for parent in parents:
-            paths = networkx.all_simple_paths(vg, parent, target)
-            if DEBUG:
-                pass
-                #print('findBackdoorBloockingSet: paths = ', [path for path in paths])
+            paths = nx.all_simple_paths(vg, parent, target)
             for path in paths:
-                if DEBUG:
+                if verbosity >= 3:
                     print('findBackdoorBloockingSet: path = ', path)
                 # Remove the last node of the path -- always the target
                 intermediates = path[:-1]
-                if DEBUG:
+                if verbosity >= 3:
                     print('findBackdoorBloockingSet: int = ', intermediates)
                 for i in intermediates:
                     if i not in pathNodes:
@@ -970,33 +1166,35 @@ class cGraph:
         pathTups.sort()
         pathTups.reverse()
         combos = [(tup[1],) for tup in pathTups]
-        if DEBUG:
+        if verbosity >= 3:
             print('findBackdoorBloockingSet: pathNodes = ', pathNodes.keys())
         # Now add any multiple field combinations.  Order is not significant here.
         multiCombos = self.getCombinations(pathNodes.keys(), maxBlocking, minOrder=2)
         combos += multiCombos
-        if DEBUG:
+        if verbosity >= 3:
             print('findBackdoorBloockingSet: combos = ', combos)
         for nodeSet in combos:
             testSet = set(nodeSet)
-            if DEBUG:
+            if verbosity >= 3:
                 print('findBackdoorBloockingSet: testSet = ', list(testSet))
             tempParents = set(parents)
             for parent in parents:
                 if parent in testSet:
                     tempParents.remove(parent)
-            if not tempParents or networkx.d_separated(vg, tempParents, {target}, testSet):
+            if not tempParents or nx.d_separated(vg, tempParents, {target}, testSet):
                 bSet = list(testSet)
                 break
-        if DEBUG:
+        if verbosity >= 3:
             print('findBackdoorBloockingSet: BDblocking = ', bSet)
         self.bdCache[cacheKey] = bSet
         return bSet
 
-    def findFrontdoorBlockingSet(self, source, target):
+    def findFrontdoorBlockingSet(self, source, target, verbosity=None):
         cacheKey = (source, target)
         if cacheKey in self.fdCache.keys():
             return self.fdCache[cacheKey]
+        if verbosity is None:
+            verbosity = self.verbosity
         backdoorSet = self.findBackdoorBlockingSet(source, target)
         maxBlocking = 2
         bSet = []
@@ -1008,9 +1206,9 @@ class cGraph:
             return True
 
         pathNodes = {}
-        vg = networkx.subgraph_view(self.g, filter_edge=includeEdge)
+        vg = nx.subgraph_view(self.g, filter_edge=includeEdge)
         # Use that view to find all indirect paths from source to dest
-        paths0 = networkx.all_simple_paths(vg, source, target)
+        paths0 = nx.all_simple_paths(vg, source, target)
         paths = [path for path in paths0]
         #print('paths = ', paths)
         if len(paths) == 0:
@@ -1045,10 +1243,10 @@ class cGraph:
         for nodeSet in combos:
             testSet = set(list(nodeSet) + list(backdoorSet))
             #print('testSet = ', list(testSet))
-            if networkx.d_separated(vg, {source}, {target}, testSet):
+            if nx.d_separated(vg, {source}, {target}, testSet):
                 bSet = list(nodeSet)
                 break
-        if DEBUG:
+        if verbosity >= 3:
             print('findFrontdoorBloockingSet: FDblocking = ', bSet)
         self.fdCache[cacheKey] = bSet
         return bSet

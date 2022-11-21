@@ -125,11 +125,11 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], controlFor=[], gtyp
         else:
             if not joint:
                 # Conditional PDF
-                if prob1.isCategorical(targets[0]):
+                if prob1.isDiscrete(targets[0]):
                     tSpec = (targets[0], aval)
                 else:
                     tSpec = (targets[0], alow, ahigh)
-                if prob1.isCategorical(conds[0]):
+                if prob1.isDiscrete(conds[0]):
                     cSpec = [(conds[0], bval)]
                 else:
                     cSpec = [(conds[0], blow, bhigh)]
@@ -138,11 +138,11 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], controlFor=[], gtyp
                 #print('psy_x = ', psy_x, ', tSpec, cSpec = ', tSpec, cSpec)
             else:
                 # Joint PDF
-                if prob1.isCategorical(targets[0]):
+                if prob1.isDiscrete(targets[0]):
                     tSpec1 = (targets[0], aval)
                 else:
                     tSpec1 = (targets[0], alow, ahigh)
-                if prob1.isCategorical(targets[1]):
+                if prob1.isDiscrete(targets[1]):
                     tSpec2 = (targets[1], bval)
                 else:
                     tSpec2 = (targets[1], blow, bhigh)

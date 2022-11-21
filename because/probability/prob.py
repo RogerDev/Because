@@ -105,9 +105,9 @@ class ProbSpace:
                         self.stringMapR[varName] = {}
                         numVals = self.convertToNumeric(varName, vals)
                         self.ds[varName] = numVals
-                        if varName not in self.categoricalVars:
+                        #if varName not in self.categoricalVars:
                             # All string vars are categorical.
-                            self.categoricalVars.append(varName)
+                        #    self.categoricalVars.append(varName)
                     else:
                         self.fieldTypes.append('n')
                         # Verify that all values are numeric
@@ -134,6 +134,7 @@ class ProbSpace:
         self.mlmodelCache = {}  # MLmodel Cache
         self.dependCache = {}  # Dependence Cache
         self.dirCache = {} # Direction Cache
+        self.standCache = {} # Data standardization Cache
 
         self._discreteVars = self._getDiscreteVars()
         self.fieldAggs = self.getAgg()
@@ -319,13 +320,16 @@ class ProbSpace:
     def fieldStats(self, field):
         return self.fieldAggs[field]
 
-    def _isDiscreteVar(self, rvName):
+    def cardinality(self, rvName):
         vals = self.ds[rvName]
-        cardinality = len(set(vals))
+        return len(set(vals))
+
+    def _isDiscreteVar(self, rvName):
+        cardinality = self.cardinality(rvName)
+        vals = self.ds[rvName]
         if not vals or type(vals[0]) == type(''):
             return True
-        #if cardinality > MAX_DISCRETE_VALS or cardinality > sqrt(self.N) * self.density:
-        if cardinality > MAX_DISCRETE_VALS:
+        if cardinality > MAX_DISCRETE_VALS or cardinality > sqrt(self.N) * self.density:
             return False
         return True
     
@@ -449,8 +453,10 @@ class ProbSpace:
             maxDelta = .4
         #print('filterDat: maxDelta = ', maxDelta)
         delta = maxDelta / 2.0
-        minPoints_default = max([min([100, sqrt(self.N)]), 20])
-        maxPoints_default = max([min([1000, int(self.N / 2)]), minPoints_default * 5])
+        Dquery = len(filtSpec) + 1
+        Nfilt = self.N**(1 / Dquery)
+        minPoints_default = max([Nfilt*.8, 20])
+        maxPoints_default = max([Nfilt*1.2, self.N / 10])
         if minPoints is None:
             minPoints = minPoints_default
         if maxPoints is None:
@@ -490,8 +496,14 @@ class ProbSpace:
                 include = True
                 for filt in filtSpec2:
                     var = filt[0]
-                    if var in self.categoricalVars:
-                        filtVal1 = filt[1]
+                    filtVal1 = filt[1]
+                    #print('filt = ', filt)
+                    if var in self.categoricalVars or type(filtVal1) == type([]) or type(filtVal1) == type(''):
+                        # We'll interpret the filter as a list of values, rather than a range if: variable is categorical
+                        # or the second term in the filter is a list, or if the filter values contain strings.
+                        if type(filtVal1) == type([]):
+                            filt = (var,) + tuple(filtVal1)
+                            filtVal1 = filt[1]
                         fieldInd = self.fieldIndex[var]
                         if self.fieldTypes[fieldInd] == 's' and type(filtVal1) == type(''):
                             # Convert values from strings to numeric tags
@@ -620,6 +632,8 @@ class ProbSpace:
             else:
                 # Must be a bare variable.  Put in a tuple.
                 outSpecs.append((inSpec,))
+        # Sort the specs so thay are in a consistent order (for cacheing).
+        outSpecs.sort()
         return outSpecs
 
     def specsAreBound(self, inSpecs):
@@ -1221,7 +1235,11 @@ class ProbSpace:
             condSpecs, filtSpecs = self.separateSpecs(givenSpecs)
             if not condSpecs:
                 # Nothing to conditionalize on.  We're computing a fully bound conditional (i.e. no free variables)
-                outPDF = self.boundCondition(rvName, filtSpecs)
+                Dquery = len(filtSpecs) + 1
+                Nfilt = self.N**(len(filtSpecs) / Dquery)
+                ss = self.SubSpace(filtSpecs)
+                outPDF = ss.distr(rvName)
+                #outPDF = self.boundCondition(rvName, filtSpecs)
             else:
                 # Conditionalize on all indicated variables. I.e.,
                 # SUM(P(filteredY | Z=z) * P(Z=z)) for all z in Z.
@@ -1440,7 +1458,7 @@ class ProbSpace:
                 var = condVars[s]
                 val = testValList[s][indx]
                 if self.isDiscrete(var):
-                    if self.isCategorical(var):
+                    if self.isCategorical(var) or self.cardinality(var) == 2:
                         # Take the values verbatim for categorical vars
                         outSpec.append((var, val))
                     else:
@@ -1512,7 +1530,7 @@ class ProbSpace:
                         # For nonzero, test points mean + tp and mean - tp
                         testVals.append(-tp,)
                         testVals.append(tp,)
-            return testVals
+            return testVals # End getTestVals
         if power == 0:
             maxLevel = .5
             levelSpecs = [0]
@@ -1530,7 +1548,7 @@ class ProbSpace:
         return testValList
         # End of getCondSpecs2
         
-    def testDirection(self, rvA, rvB, power=None, N_train=100000):
+    def testDirection(self, rvA, rvB, givenSpecs=[], power=None, N_train=2000):
         """ When having power parameter less than or equal to 1,
             test the causal direction between variables A and B
             using one of the LiNGAM or GeNGAM pairwise algorithms.
@@ -1548,20 +1566,42 @@ class ProbSpace:
         """
         if power is None:
             power = self.power
-        cacheKey = (rvA, rvB, power)
+        givenSpecs = self.normalizeSpecs(givenSpecs)
+        cacheKey = (rvA, rvB, tuple(givenSpecs), power)
         if cacheKey in self.dirCache:
             rho = self.dirCache[cacheKey]
         else:
-            # Use standardized data
-            if self.isIndependent(rvA, rvB):
-                return 0.0
-            standA = standardize(self.ds[rvA])
-            standB = standardize(self.ds[rvB])
-            rho = direction.test_direction(standA, standB, power, N_train)
+            if givenSpecs:
+                # There are conditions.  Create a subspace based on the conditions
+                # and do testDirecton on that subspace (with no conditions).
+                ss = self.SubSpace(givenSpecs)
+                if ss.N < 100:
+                    rho = 0.0
+                else:
+                    rho = ss.testDirection(rvA, rvB, power=power, N_train=N_train)
+            else:
+                # Unconditional.
+                # Standardize the data.
+                if self.cardinality(rvA) > 2:
+                    standA = self.standCache.get(rvA, None)
+                    if standA is None:
+                        standA = standardize(self.ds[rvA])
+                        self.standCache[rvA] = standA
+                else:
+                    standA = self.ds[rvA]
+                if self.cardinality(rvB) > 2:
+                    standB = self.standCache.get(rvB, None)
+                    if standB is None:
+                        standB = standardize(self.ds[rvB])
+                        self.standCache[rvB] = standB
+                else:
+                    standB = self.ds[rvB]
+                # Call the direction module with standardized data.
+                rho = direction.test_direction(standA, standB, power, N_train)
             # Add result to cache
             self.dirCache[cacheKey] = rho
             # Add reverse result to cache, with reversed rho
-            reverseKey = (rvB, rvA)
+            reverseKey = (rvB, rvA, tuple(givenSpecs), power)
             self.dirCache[reverseKey] = -rho
         return rho
 
@@ -1582,7 +1622,7 @@ class ProbSpace:
         #print('old = ', spec, ', new =', outSpec, ', delta = ', deltaAdjust)
         return outSpec
 
-    def dependence(self, rv1, rv2, givenSpecs=[], power=None, raw=False, seed=1, num_f=100, num_f2=5, sensitivity=5,
+    def dependence(self, rv1, rv2, givenSpecs=[], power=None, raw=False, seed=None, num_f=100, num_f2=5, sensitivity=5,
                    dMethod='rcot'):
         """
         givens is [given1, given2, ... , givenN]
@@ -1707,6 +1747,7 @@ class ProbSpace:
                 continue
             #print('ss1.N = ', ss1.N)
             testSpecs = ss1.getCondSpecs([(rv2,)], power)
+            #print('rv, testSpecs, power = ', rv2, testSpecs, power)
             for testSpec in testSpecs:
                 # prob2 is the conditional subspace of everything but rv2
                 # conditioned on rv2
@@ -1769,7 +1810,7 @@ class ProbSpace:
 
 
 
-    def independence(self, rv1, rv2, givenSpecs=[], power=None, seed=1, num_f=100, num_f2=5, sensitivity=5,
+    def independence(self, rv1, rv2, givenSpecs=[], power=None, seed=None, num_f=100, num_f2=5, sensitivity=5,
                      dMethod='rcot'):
         """
             Calculate the independence between two variables, and an optional set of givens.
@@ -1786,7 +1827,7 @@ class ProbSpace:
         return ind
 
 
-    def isIndependent(self, rv1, rv2, givenSpecs=[], power=None, seed=1, num_f=100, num_f2=5, sensitivity=5,
+    def isIndependent(self, rv1, rv2, givenSpecs=[], power=None, seed=None, num_f=100, num_f2=5, sensitivity=5,
                       dMethod='rcot'):
         """ Determines if two variables are independent, optionally given a set of givens.
             Returns True if independent, otherwise False
