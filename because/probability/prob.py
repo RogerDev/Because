@@ -1229,7 +1229,7 @@ class ProbSpace:
                 dat = self.aData[indx,:]
             else:
                 dat = None
-            outPDF = PDF(self.N, pdfSpec, isDiscrete=isDiscrete, data=dat)
+            outPDF = PDF(self.N, pdfSpec, isDiscrete=isDiscrete, data=dat, rvName=rvName)
         else:
             # Conditional Probability
             condSpecs, filtSpecs = self.separateSpecs(givenSpecs)
@@ -1297,7 +1297,7 @@ class ProbSpace:
                         newprob = accum[i]
                         newBin = pdfBin[:-1] + (newprob,)
                         outSpecs.append(newBin)
-                    outPDF = PDF(allPoints, outSpecs, isDiscrete = isDiscrete)
+                    outPDF = PDF(allPoints, outSpecs, isDiscrete = isDiscrete, rvName=rvName)
                 else:
                     outPDF = None
         self.distrCache[cacheKey] = outPDF

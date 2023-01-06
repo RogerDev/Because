@@ -55,6 +55,13 @@ Examples:
                 'P(A > 0)',
                 'E(A | B=0)'
                 ])
+
+The parameter allowedResults (default None) allows the caller to narrow
+the set of result types permitted.  This list may contain any subset of
+['P', 'E', 'D'], indicating Probability, Expectation, or Distribution
+respectively.  Note that type 'D' (distribution) is indicated by a
+probability query with an unbound target (e.g. P(income)).  An unbound
+target results in a univariate distribution (PDF). 
 """
 from because.hpcc_utils.parseQuery import Parser
 
@@ -109,6 +116,9 @@ def queryList(ps, inList, allowedResults=None):
 def query(ps, s, allowedResults=None):
     """
     Process a single query and return a single result.
+    Parameters and results are the same as for queryList above,
+    except that it takes a single query string instead of
+    a list, and returns a single result, rather than a list.
     """
     results = queryList(ps, [s], allowedResults)
     return results[0]

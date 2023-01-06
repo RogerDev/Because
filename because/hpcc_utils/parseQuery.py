@@ -35,7 +35,7 @@ class Parser:
     def parse(self, strList):
         """
         Main entry point.  Parse a list of query strings and return a list of:
-        (queryType, targetSpec, conditionSpec, doSpec)
+        (queryType, targetSpec, conditionSpec, doSpec).
 
         queryTypes are:
         - P -- Probability
