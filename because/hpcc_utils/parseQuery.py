@@ -132,7 +132,7 @@ class Parser:
 
     def parseTerms(self, s):
         # cases = '','in', 'between', '<', '>', '='
-        splitCases = ['>=','>', '<=', '=', '<', 'in', 'between']
+        splitCases = ['>=','>', '<=', '=', '<', ' in ', ' between ']
         terms = []
         if s:
             # Convert => to >= and =< to <=
@@ -153,7 +153,7 @@ class Parser:
                         tcase = c
                         var = t2[0].strip()
                         val = t2[1].strip()
-                        if tcase == 'in' or tcase == 'between':
+                        if tcase == ' in ' or tcase == ' between ':
                             # break up the list
                             val = val[1:-1].split(';')
                             val = [v.strip() for v in val]
