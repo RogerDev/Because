@@ -131,7 +131,7 @@ class Parser:
         return outl
 
     def parseTerms(self, s):
-        # cases = '','in', 'between', '<', '>', '='
+        # cases = '',' in ', ' between ', '<', '>', '='
         splitCases = ['>=','>', '<=', '=', '<', ' in ', ' between ']
         terms = []
         if s:
@@ -182,12 +182,14 @@ class Parser:
                 outTerm = (term[1], -inf, term[2]+1/inf)
             elif ttype == '=':
                 outTerm = (term[1], term[2])
-            elif ttype == 'between':
+            elif ttype == ' between ':
                 outTerm = (term[1], term[2][0], term[2][1])
-            elif ttype == 'in':
-                outTerm = (term[1],) + tuple(term[2])
+            elif ttype == ' in ':
+                #outTerm = (term[1],) + tuple(term[2])
+                outTerm = (term[1], tuple(term[2]))
+
             else:
-                outTerm == ('ERROR', term[1], term[2])
+                outTerm = ('ERROR', term[1], term[2])
             outTerms.append(outTerm)
         return outTerms
 

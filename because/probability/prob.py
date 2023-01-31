@@ -497,11 +497,10 @@ class ProbSpace:
                 for filt in filtSpec2:
                     var = filt[0]
                     filtVal1 = filt[1]
-                    #print('filt = ', filt)
-                    if var in self.categoricalVars or type(filtVal1) == type([]) or type(filtVal1) == type(''):
+                    if var in self.categoricalVars or len(filt) > 3 or type(filtVal1) in [type((0,)), type([]), type('')]:
                         # We'll interpret the filter as a list of values, rather than a range if: variable is categorical
                         # or the second term in the filter is a list, or if the filter values contain strings.
-                        if type(filtVal1) == type([]):
+                        if type(filtVal1) in [type([]), type((0,))]:
                             filt = (var,) + tuple(filtVal1)
                             filtVal1 = filt[1]
                         fieldInd = self.fieldIndex[var]

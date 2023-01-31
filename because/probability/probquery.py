@@ -95,7 +95,7 @@ def queryList(ps, inList, allowedResults=None):
             assert allowedResults is None or cmd in allowedResults,  'Error processing query: ' + \
                 inList[i] + '.' + '  Target is unbound, resulting in a distribution.  Distribution ' + \
                 'type targets are not supported in this context.'
-        elif len(allowedResults) == 1 and allowedResults[0] == 'D':
+        elif cmd == 'P':
             assert allowedResults is None or cmd in allowedResults,  'Error processing query: ' + \
                 inList[i] + '.' + '  Target is bound.  Only unbound targets (i.e. distributions) ' + \
                 'are allowed in this context.'
