@@ -327,7 +327,7 @@ class ProbSpace:
     def _isDiscreteVar(self, rvName):
         cardinality = self.cardinality(rvName)
         vals = self.ds[rvName]
-        if not vals or type(vals[0]) == type(''):
+        if not vals or type(vals[0]) == type('') or cardinality < 50:
             return True
         if cardinality > MAX_DISCRETE_VALS or cardinality > sqrt(self.N) * self.density:
             return False
@@ -446,6 +446,173 @@ class ProbSpace:
         """ Filter the data in its array form and return a filtered array.
             See FilteredSpace documentation (above) for details.
         """
+        if DEBUG:
+            print('ProbSpace.filterDat: filtSpec = ', repr(filtSpec))
+        maxAttempts = 8
+        if self.N > 1:
+            maxDelta = .4 / log(self.N, 10)
+        else:
+            maxDelta = .4
+        #print('filterDat: maxDelta = ', maxDelta)
+        delta = maxDelta / 2.0
+        Dquery = len(filtSpec) + 1
+        Nfilt = self.N**(1 / Dquery)
+        minPoints_default = max([Nfilt*.8, 20])
+        maxPoints_default = max([Nfilt*1.2, self.N / 10])
+        if minPoints is None:
+            minPoints = minPoints_default
+        if maxPoints is None:
+            maxPoints = maxPoints_default
+        if adat is None:
+            adat = self.aData
+        progressive = False
+        # Reorganize the filters for fast runtime.
+        # Four types of filters:
+        # - P -- Progressive (P, var, fieldInd, value)
+        # - V -- Exact Value (V, var, fieldInd, std, value)
+        # - R -- Range (R, var, fieldInd, low, high)
+        # - L -- List (L, var, fieldInd, val1, val2, ... , valK)
+        filtSpec2 = [] # Reorganized filters
+        for filt in filtSpec:
+            var = filt[0]
+            filtVal1 = filt[1]
+            fieldInd = self.fieldIndex[var]
+            if var in self.categoricalVars or len(filt) > 3 or type(filtVal1) in [type((0,)), type([]), type('')]:
+                # List type
+                filtType = 'L'
+                if type(filtVal1) in [type([]), type((0,))]:
+                    args = tuple(filtVal1)
+                else:
+                    args = filt[1:]
+                if self.fieldTypes[fieldInd] == 's' and type(args[0]) == type(''):
+                    # Convert values from strings to numeric tags
+                    dict = self.stringMap[var]
+                    args = tuple([dict[val] for val in list(args)])
+            elif len(filt) == 2:
+                # Exact value 
+                if not self.isDiscrete(var):
+                    # Not a discrete var.  We can do progressive filtering
+                    filtType = 'P'
+                    aggs = self.fieldAggs[var]  # Field aggregates
+                    std = aggs[3] # Standard deviation
+                    args = (std, filtVal1)
+                    progressive = True
+                else:
+                    # Discrete.  Just match exactly
+                    filtType = 'V'
+                    args = (filtVal1,)
+            else:
+                # It is a range.  Exactly three field in filtSpec
+                filtType = 'R'
+                low = filt[1]
+                high = filt[2]
+                if low is None or high is None:
+                    dSpec = self.discSpecs[fieldInd]
+                    if low is None:
+                        varMin = dSpec[1]
+                        low = varMin
+                    if high is None:
+                        varMax = dSpec[2]
+                        high = varMax + .0001
+                args = (low, high)
+            filtSpec2.append((filtType, var, fieldInd) + args)
+        #print('filtSpec2 = ', filtSpec2)
+        if progressive:
+            attempts = maxAttempts
+        else:
+            attempts = 1
+        for attempt in range(attempts):
+            remRecs = []
+            for i in range(self.N):
+                include = True
+                for filt in filtSpec2:
+                    fType = filt[0]
+                    var = filt[1]
+                    fieldInd = filt[2]
+                    args = filt[3:]
+                    val = adat[fieldInd, i]
+                    if fType == 'L':
+                        if val not in args:
+                            include = False
+                            break
+                    elif fType == 'P':
+                        std = args[0]
+                        cmpval = args[1]
+                        sDelta = delta * std # Scaled delta
+                        low = val - sDelta
+                        high = val + sDelta
+                        if val < low or val >= high:
+                            include = False
+                            break
+                    elif fType == 'V':
+                        cmpval = args[0]
+                        if val != cmpval:
+                            include = False
+                            break
+                    elif fType == 'R':
+                        low = args[0]
+                        high = args[1]
+                        if val < low or val >= high:
+                            include = False
+                            break
+                    else:
+                        assert False, 'ProbSpace.filterDat.  Illegal filter type = ' + str(fType)
+                if not include:
+                    remRecs.append(i)
+            remaining = self.N - len(remRecs)
+            #print('attempt = ', attempt, ', remaining = ', remaining, ', delta = ', delta)
+            targetVal = maxPoints * .5
+            midpoint = (minPoints + maxPoints) / 2.0
+            damping = (1/(attempt+1))
+            minFactor = 1.1**damping
+            maxFactor = 5**damping
+            if remaining > 0:
+                ratio = (midpoint / remaining)**damping
+            else:
+                ratio = maxFactor
+            #print('ratio1 = ', ratio)
+            #print('minFactor, maxFactor = ', minFactor, maxFactor)
+            if ratio >= 1 and ratio < minFactor:
+                ratio = minFactor
+            elif ratio < 1 and ratio > (1/minFactor):
+                ratio = 1/minFactor
+            if ratio >= maxFactor:
+                ratio = maxFactor
+            elif ratio < (1/maxFactor):
+                ratio = 1/maxFactor
+            #print('ratio2 = ', ratio)
+            if remaining < minPoints or remaining > maxPoints:
+                # Outside of range.  Scale up or down.
+                newDelta = delta * ratio
+            else:
+                # We're in range.  Set newDelta to 0 to exit loop
+                newDelta = 0
+            if newDelta > maxDelta:
+                newDelta = maxDelta
+            if newDelta == 0 or delta >= maxDelta:
+                # If we're in range or if we've exceeded maxDelta, break out of loop.
+                break 
+            else:
+                # Continue in loop with a new delta.
+                delta = newDelta
+        if DEBUG and progressive:
+            print('attempt = ', attempt, ', delta = ', delta, ', maxDelta = ', maxDelta, ', remaining = ', remaining, ', minPoints, maxPoints = ', minPoints, maxPoints)
+            #print('finalQuery = ', filtSpec2, ', parentProb = ', remaining/self.N, ', parentN = ', self.N)
+            pass
+        # Remove all the non included rows
+        filtered = np.delete(adat, remRecs, 1)
+        #print('filtered.shape = ', filtered.shape)
+        finalQuery = filtSpec2
+        parentProb = filtered.shape[1] / float(self.N)
+        return filtered, parentProb, finalQuery
+        # End of filterDat
+
+    def filterDatOld(self, filtSpec, minPoints=None, maxPoints=None, adat = None):
+        """ Filter the data in its array form and return a filtered array.
+            See FilteredSpace documentation (above) for details.
+        """
+        if DEBUG:
+            print('ProbSpace.filterDat: filtSpec = ', repr(filtSpec))
         maxAttempts = 8
         if self.N > 1:
             maxDelta = .4 / log(self.N, 10)
@@ -478,11 +645,11 @@ class ProbSpace:
             attempts = 1
         for attempt in range(attempts):
             # Fix up progressively filtered specs (i.e. non discrete, 2-tuples)
-            # to filter on value - delte to value + delta
+            # to filter on value - delta to value + delta
             filtSpec2 = []
             for filt in filtSpec:
                 var = filt[0]
-                if self.isDiscrete(var) or len(filt) == 3:
+                if not progressive or self.isDiscrete(var) or type(filt[1]) in [type((0,)), type([])] or len(filt) >= 3:
                     filtSpec2.append(filt)
                 else:
                     # Progressive
@@ -586,7 +753,7 @@ class ProbSpace:
         finalQuery = filtSpec2
         parentProb = filtered.shape[1] / float(self.N)
         return filtered, parentProb, finalQuery
-        # End of filterDat
+        # End of filterDatOld
 
     # Not used
     def binToVal(self, field, bin):

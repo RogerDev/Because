@@ -9,8 +9,14 @@ Common way to format exceptions for HPCC embedded functions
 """
 def format(func=''):
     import traceback as tb
-    exc = tb.format_exc(limit=2)
-    if len(exc) < 100000:
-        return func + ': ' + exc
+    import sys
+    e_t, e, tback = sys.exc_info()
+    if e_t.__name__ == 'AssertionError':
+        outStr =  func + ': Error -- ' + e.args[0]
     else:
-        return func + ': ' + exc[:200] + ' ... ' + exc[-200:]
+        exc = tb.format_exc()
+        if len(exc) < 100000:
+            outStr = func + ': ' + exc
+        else:
+            outStr = func + ': ' + exc[:200] + ' ... ' + exc[-200:]
+    return outStr
