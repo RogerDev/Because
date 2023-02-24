@@ -77,10 +77,10 @@ class Parser:
             cterms = self.parseTerms(cond)
             cSpec = self.convertToSpec(cterms)
             outtype = outtype.upper()
-            assert outtype in ['P', 'E', 'DEPENDENCE', 'CORRELATION'], \
+            assert outtype in ['P', 'E', 'DEPENDENCE', 'CORRELATION', 'CMODEL'], \
                 'Error parsing probability query.  Invalid result type:"' + \
                 outtype + '". Valid types are "P" for probability or "E" for expectation, ' + \
-                    'Dependence, or Correlation'
+                    'Dependence, Correlation, or Cmodel'
             if outtype == 'P' and len(tSpec) == 1 and len(tSpec[0]) == 1:
                 # It is probability with an unbound target. The answer is
                 # a distribution
