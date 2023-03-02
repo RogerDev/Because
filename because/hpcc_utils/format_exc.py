@@ -15,8 +15,8 @@ def format(func=''):
         outStr =  func + ': Error -- ' + e.args[0]
     else:
         exc = tb.format_exc()
-        if len(exc) < 100000:
+        if len(exc) < 900:
             outStr = func + ': ' + exc
         else:
-            outStr = func + ': ' + exc[:200] + ' ... ' + exc[-200:]
+            outStr = func + ': ' + exc[:400] + ' ... ' + exc[-400:]
     return outStr
