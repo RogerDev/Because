@@ -74,9 +74,14 @@ def queryList(ps, inList, allowedResults=None):
     results = []
     for i in range(len(specList)):
         spec = specList[i]
-        cmd, targ, cond, interv = spec
+        cmd, targ, cond, ctrlfor, interv, cfac = spec
         assert not interv, 'Error pasrsing probability query.  Probability query does not support' + \
             'intervention (i.e. do() clause).  In:' + inList[i] + '.'
+        assert not cfac, 'Error pasrsing probability query.  Probability query does not support' + \
+            'counterfactual (i.e. P[<counterfactual>](...) clause).  In:' + inList[i] + '.'
+        # We can just append the controlFor variables to the conditional for straight
+        # probability queries
+        cond += ctrlfor
         for term in targ + cond:
             var = term[0]
             assert var in vars, 'Error parsing probability query.  Variable name: "' + repr(var) + \
