@@ -46,7 +46,7 @@ class cGraph:
             if ps:
                 self.power = ps.power
             else:
-                self.power = power
+                self.power = 1
         else:
             self.power = power
         self.verbosity = verbosity
@@ -870,6 +870,109 @@ class cGraph:
                 outMap.append((pvar, var))
         return outMap
 
+    def compileInterv(self, targets, conds, intervs, power=None, verbosity=None):
+        """
+        Convert a probability query with interventions to a probability query
+        without interventions, by analyzing the causal model.
+        """
+        if power is None:
+            power = self.power
+        if verbosity is None:
+            verbosity = self.verbosity
+        # Filter out any interventions for which the target is not a descendant of the
+        # intevening variable.  The effect of those interventions will alsways be zero.
+        doListF = []
+        for item in intervs:
+            assert len(item) == 2, 'cGraph.compileInterv: interventions must specify exact equality.'
+            rv, value = item
+            for target in targets:
+                targetRV = target[0]
+                if targetRV in nx.descendants(self.g, rv):
+                    # It is a descendant.  Keep it.
+                    doListF.append(item)
+        if not doListF:
+            # No causal effects.  Return the conditions unmodified.
+            return conds
+        # Use a copy of conds so we don't modify the original
+        conds = conds[:] + intervs
+        # Find all the backdoor paths and identify the minimum set of variables (Z) that
+        # block all such paths without opening any new paths.
+        blocking = []
+        for item in doListF:
+            bs = self.findBackdoorBlockingSet(item[0], targetRV)
+            blocking += bs
+        # Eliminate any duplicates
+        blockingSet = list(set(blocking))
+        if verbosity >= 3:
+            print('cGraph.compileInterv: backdoor blocking set = ', blockingSet)
+        # Add the blocking variable to the conditions if not already there.
+        condVars = [item[0] for item in conds]
+        for item in blockingSet:
+            blockVar = item
+            if blockVar not in condVars:
+                conds.append((blockVar,))
+        return conds
+
+    def distr(self, targets, conds, intervs, power=None, verbosity=None):
+        """
+        Execute a probability distribution query, possibly with causal interventions.
+        """
+        if power is None:
+            power = self.power
+        if verbosity is None:
+            verbosity = self.verbosity
+        if verbosity >= 3:
+            print('cGraph.distr: Starting -- targets, conds, intervs = ', targets, conds, intervs)
+        if intervs:
+            # We have interventions. Compile the intervention to a standard probability query.
+            newConds = self.compileInterv(targets, conds, intervs, power, verbosity)
+        else:
+            newConds = conds
+        dist = self.prob.distr(targets, newConds, power=power)
+        if verbosity >= 3:
+            print('cGraph.distr: Completed -- targets, conds, intervs, dist = ', targets, newConds, intervs, dist)
+        return dist
+
+    def P(self, targets, conds, intervs, power=None, verbosity=None):
+        """
+        Execute a probability query, possibly with causal interventions.
+        """
+        if power is None:
+            power = self.power
+        if verbosity is None:
+            verbosity = self.verbosity
+        if verbosity >= 3:
+            print('cGraph.P: Starting -- targets, conds, intervs = ', targets, conds, intervs)
+        if intervs:
+            # We have interventions. Compile the intervention to a standard probability query.
+            newConds = self.compileInterv(targets, conds, intervs, power, verbosity)
+        else:
+            newConds = conds
+        result = self.prob.P(targets, newConds, power=power)
+        if verbosity >= 3:
+            print('cGraph.P: Completed -- targets, conds, intervs, result = ', targets, newConds, intervs, result)
+        return result
+
+    def E(self, targets, conds, intervs, power=None, verbosity=None):
+        """
+        Execute am Expectation query, possibly with causal interventions.
+        """
+        if power is None:
+            power = self.power
+        if verbosity is None:
+            verbosity = self.verbosity
+        if verbosity >= 3:
+            print('cGraph.E: Starting -- targets, conds, intervs = ', targets, conds, intervs)
+        if intervs:
+            # We have interventions. Compile the intervention to a standard probability query.
+            newConds = self.compileInterv(targets, conds, intervs, power, verbosity)
+        else:
+            newConds = conds
+        result = self.prob.E(targets, newConds, power=power)
+        if verbosity >= 3:
+            print('cGraph.E: Completed -- targets, conds, result = ', targets, newConds, result)
+        return result
+    
     def intervene(self, targetRV, doList, controlFor = [], power=None, verbosity=None):
         """ 
         Implements Intverventions (Level2 of Ladder of Causality)
@@ -901,10 +1004,15 @@ class cGraph:
 
         # Find all the backdoor paths and identify the minimum set of variables (Z) that
         # block all such paths without opening any new paths.
-        blockingSet = self.findBackdoorBlockingSet(doListF[0][0], targetRV)
+        blocking = []
+        for item in doListF:
+            bs = self.findBackdoorBlockingSet(item[0], targetRV)
+            blocking += bs
+        # Eliminate any duplicates
+        blockingSet = list(set(blocking))
         if verbosity >= 3:
-            print('cGraph.intervene: backward blocking set = ', blockingSet)
-        # Make sure that none of our intervention variables is in the blocking set.
+            print('cGraph.intervene: backdoor blocking set = ', blockingSet)
+        # Make sure that none of our intervention variables are in the blocking set.
         for item in doList:
             if item[0] in blockingSet:
                 blockingSet.remove(item[0])

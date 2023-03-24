@@ -523,6 +523,23 @@ class ProbSpace:
             attempts = 1
         for attempt in range(attempts):
             remRecs = []
+            # Compose the final filter for this run.
+            finalFilter = []
+            for filt in filtSpec2:
+                fType = filt[0]
+                var = filt[1]
+                args = filt[3:]
+                if fType != 'P':
+                    # Not progressive
+                    finalFilter.append((var,) + args)
+                else:
+                    # Progressive
+                    std = args[0]
+                    sDelta = delta * std # Scaled delta
+                    cmpval = args[1]
+                    low = cmpval - sDelta
+                    high = cmpval + sDelta
+                    finalFilter.append((var, low, high))
             for i in range(self.N):
                 include = True
                 for filt in filtSpec2:
@@ -539,8 +556,8 @@ class ProbSpace:
                         std = args[0]
                         cmpval = args[1]
                         sDelta = delta * std # Scaled delta
-                        low = val - sDelta
-                        high = val + sDelta
+                        low = cmpval - sDelta
+                        high = cmpval + sDelta
                         if val < low or val >= high:
                             include = False
                             break
@@ -601,9 +618,8 @@ class ProbSpace:
             pass
         # Remove all the non included rows
         filtered = np.delete(adat, remRecs, 1)
-        #print('filtered.shape = ', filtered.shape)
-        finalQuery = filtSpec2
         parentProb = filtered.shape[1] / float(self.N)
+        finalQuery = finalFilter
         return filtered, parentProb, finalQuery
         # End of filterDat
 
@@ -872,7 +888,7 @@ class ProbSpace:
         targetSpecs = self.normalizeSpecs(targetSpecs)
         givenSpecs = self.normalizeSpecs(givenSpecs)
         if DEBUG:
-            print('ProbSpace.E: E(' , targetSpecs, '|', givenSpecs , ')')
+            print('ProbSpace.E: E(' , targetSpecs, '|', givenSpecs , ')', ', power = ', power)
         assert len(targetSpecs) == 1, 'ProbSpace.E: target must be singular.  Got ' + str(targetSpecs)
         assert not self.specsAreBound(targetSpecs), 'ProbSpace.E: target must be unbound (i.e. a bare variable name or 1-tuple).  Got ' + str(targetSpecs)
         target = targetSpecs[0][0] # Single bare variable
@@ -1038,20 +1054,27 @@ class ProbSpace:
             # Straight (bound) conditioning
             Dtarg = 1
             ss = self.getCondSpace(filtSpecs)
-            result = ss.E(target)
+            #print('No control: ss.N = ', ss.N)
+            if ss.N == 0:
+                # No points in this interval.  Use kernel approximation
+                # to estimate the expectation.
+                result = self.E(target, givenSpecs, cMethod='j', smoothness=1)
+            else:
+                result = ss.E(target)
         else:
             # Conditionalization and possibly conditioning as well.
             # Conditionalize on all indicated variables. I.e.,
             # SUM(P(filteredY | Z=z) * P(Z=z)) for all z in Z.
             # First, we filter on the bound conditions (if any), then conditionalize on the reduced set
             if filtSpecs:
-                 ss = self.getCondSpace(filtSpecs, Dtarg = len(condSpecs) + 1)
-                #print('ss.N, min, max = ', ss.N, minP_Filt, maxP_Filt)
+                ss = self.getCondSpace(filtSpecs, Dtarg = len(condSpecs) + 1)
+                #print('ss.N = ', ss.N)
             else:
                 ss = self
             if ss.N <= 2:
                 return None
             condFiltSpecs = self.getCondSpecs(condSpecs, power=power, effN=ss.N)
+            #print('condSpecs = ', condSpecs, ', condFiltSpecs = ', condFiltSpecs)
             accum = 0.0
             allProbs = 0.0
             for cf in condFiltSpecs:
@@ -1064,7 +1087,7 @@ class ProbSpace:
                 if exp is None:
                     continue
                 probZ = self.P(cf, power=power)
-                #print('probZ = ', probZ, ', exp = ', exp,  ', ss.N = ', ss.N)
+                #print('probZ = ', probZ, ', exp = ', exp,  ', ss.N = ', ss.N, ', cf = ', cf)
                 if probZ == 0:
                     # Zero probability -- don't bother accumulating
                     continue
@@ -1442,6 +1465,7 @@ class ProbSpace:
                     probYgZ = ss2.distr(rvName)
                     #probYgZ = filtSpace.distr(rvName, cf)
                     # Now we can compute probZ as ratio of the number of data points in the filtered distribution and the original
+                    #print('parentQuery = ', ss2.parentQuery)
                     probZ = self.P(ss2.parentQuery)
                     #print('probZ = ', probZ, ', probYgZ.E() = ', probYgZ.E(), ', probYgZ.N = ', probYgZ.N, ', ss.N = ', ss.N, ', ss.query = ', ss.parentQuery, ', ss2.query = ', ss2.parentQuery)
                     if probZ == 0:
@@ -1597,7 +1621,9 @@ class ProbSpace:
             distr = self.distr(var)
             mean = distr.E()
             std = distr.stDev()
-            stats[var] = (mean, std)
+            minv = distr.minVal()
+            maxv = distr.maxVal()
+            stats[var] = (mean, std, minv, maxv)
         
         def generateIndexCombos(testValList):
             if len(testValList) == 1:
@@ -1643,7 +1669,8 @@ class ProbSpace:
                            
                 else:
                     # Continuous.  Create small ranges based on delta
-                    mean, std = stats[var]
+                    mean, std, minv, maxv = stats[var]
+                    delta = min(.3, 6 / (power*2+1))
                     # Mean + val +/- delta
                     varSpec = (var, mean + (val - delta) * std, mean + (val + delta) * std)
                     #print('varSpec = ', varSpec, ', val = ', val, ', mean, std = ', mean, std)
@@ -1661,7 +1688,7 @@ class ProbSpace:
         def getTestVals(self, rvName, levelSpecs):
             testVals = []
             isDiscrete = self.isDiscrete(rvName)
-            if isDiscrete or power >= 100:
+            if isDiscrete:
                 # If catagorical, return all values
                 # If discrete, return some discrete samples
                 # If power >= 100, return all bins.
@@ -1704,6 +1731,7 @@ class ProbSpace:
             maxLevel = .5 + log(power, 10)
             #print('maxLevel = ', maxLevel)
             levelSpecs = [0] + list(np.arange(1/power*maxLevel, maxLevel + 1/power*maxLevel, 1/power*maxLevel))
+        #print('levelSpecs = ', levelSpecs)
         testValList = []
         # Find values for each variable based on testPoints
         nVars = len(condVars)
@@ -1711,6 +1739,7 @@ class ProbSpace:
             # Only one var to do.  Find the values.
             testVals = getTestVals(self, rvName, levelSpecs)
             testValList.append(testVals)
+        #print('testValList = ',  testValList)
         return testValList
         # End of getCondSpecs2
         
@@ -1953,7 +1982,7 @@ class ProbSpace:
             #calDep = max([min([calDep, 1]), 0])
             #return calDep
         else:
-            print('Cond distr too small: ', rv1, rv2, givenSpecs)
+            #print('Cond distr too small: ', rv1, rv2, givenSpecs)
             dep =  0.0
         self.dependCache[cacheKey] = dep
         return dep
