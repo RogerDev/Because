@@ -6,16 +6,21 @@ import time
 
 from because.causality import rv
 from because.causality.cgraph import cGraph
-from because.synth import read_data
+from because.synth import gen_data
 from because.probability import independence
 
 args = sys.argv
-if (len(args) > 1):
+if len(args) > 1:
     test = args[1]
+if len(args) > 2:
+    nSamples = int(args[2])
+else:
+    nSamples = 1000
 
 f = open(test, 'r')
-exec(f.read(), globals())
 
+# Execute the model file and load its variables into our globals
+exec(f.read(), globals())
 print('Testing: ', test, '--', testDescript)
 print()
 start = time.time()
@@ -33,13 +38,23 @@ for var in model:
     gnode = rv.RV(name, parents, observed, dType, None, None)
     gnodes.append(gnode)
 
+
+# Constuct Gen with mod and sem params set as globals 'model' and 'varEquations'
+# set into globals by executing the model file.
+gen = gen_data.Gen(mod=model, sem=varEquations, globs=locals())
+
+# Get the variable names in the same order as the samples will be generated
+variables = gen.getVariables()
+print('Vars = ', variables)
+
+# Note that samples here is a generator function, so it, in effect, creates a
+# stream that is only produced as it is consumed.
+data = gen.getDataset(nSamples)
+
 # For dat file, use the input file name with the .csv extension
 tokens = test.split('.')
 testFileRoot = str.join('.',tokens[:-1])
 datFileName = testFileRoot + '.csv'
-
-d = read_data.Reader(datFileName)
-data = d.read()
 
 g = cGraph(gnodes, data)
 
@@ -53,7 +68,7 @@ deps = g.computeDependencies(2)
 g.printDependencies(deps)
 print()
 
-results = g.TestModel(order = 2)
+results = g.TestModel(order = 3, sensitivity=10)
 
 conf, numTests, numTestsByType, numErrsByType, numWarnsByType, errors, warnings = results
 

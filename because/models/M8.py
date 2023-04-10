@@ -6,7 +6,7 @@
 t = 0
 
 # Describe the test
-testDescript = 'Reference Model M7'
+testDescript = 'Reference Model M8'
 
 # Define the causal model.
 # Each random variable has the following fields:
@@ -26,8 +26,8 @@ model = [   ('B', []),
 varEquations = [
 			    #'B = math.sin((t % 365) / 365 * 6.28) * 50 + 40 + normal(0, 5)',
                 'B = logistic(0, 1)',
-                'F = logistic(0, 1)',
-                'G = logistic(0, 1)',
+                'F = logistic(-1, 1)',
+                'G = logistic(1, 1)',
 			    'A = (B + F) / 2.0 + logistic(0,.5)',
                 'D = (A + G) / 2.0 + logistic(0,.5)',
  			    'C = (B + A + D) / 3.0 + logistic(0,.5)',

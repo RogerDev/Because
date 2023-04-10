@@ -40,7 +40,7 @@ class Gen:
     """
         Synthetic dataset generator class.
     """
-    def __init__(self, semFilePath=None, mod=None, sem=None, init=None):
+    def __init__(self, semFilePath=None, mod=None, sem=None, init=None, globs=None):
         """
         Constructor for Gen class.
 
@@ -61,9 +61,14 @@ class Gen:
             sem (list): A list of equations of the same format as the 'varEquations'
                 parameter of a model file
             init (list): A list of initialization lines that are only executed once.
+            globs (dict): A namespace passed in to initialize global variables.
         """
         assert (semFilePath is not None and sem is None and mod is None) or (semFilePath is None and sem is not None and mod is not None), \
                 'Gen: Must provide semFilePath or sem and mod, but not both.'
+        self.globals = globals()
+        if globs is not None:
+            for key in globs.keys():
+                self.globals[key] = globs[key]
         self.semFileName = semFilePath
         self.sem = sem
         self.mod = mod
@@ -201,7 +206,7 @@ class Gen:
                 # Don't allow imports
                 if 'import' not in initline:
                     try:
-                        exec(initline, globals(), locs)
+                        exec(initline, self.globals, locs)
                     except:
                         assert False, 'synth.gen_data:  Bad import line = ' + initline
                 else:
@@ -241,7 +246,7 @@ class Gen:
                     except:
                         assert False, 'Bad cEquations'
                     try:
-                        exec(varEquation, globals(), locs)
+                        exec(varEquation, self.globals, locs)
                     except:
                         assert False, '*** Invalid Equation = ' + self.varEquations[i]
                 for i in range(len(cVarNames)):
@@ -275,7 +280,7 @@ class Gen:
                     isGiven = True
                     break
             if not isGiven:
-                exec(varEquation, globals(), locs)
+                exec(varEquation, self.globals, locs)
         return eval(target)
 
     def getVariables(self):

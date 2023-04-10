@@ -6,7 +6,7 @@
 t = 0
 
 # Describe the test
-testDescript = 'Reference Model M0-- Simple V'
+testDescript = 'Reference Model M0-- Two variable chain'
 
 # Define the causal model.
 # Each random variable has the following fields:
@@ -15,14 +15,12 @@ testDescript = 'Reference Model M0-- Simple V'
 # - isObserved (Optional, default True)
 # - Data Type (Optional, default 'Numeric')  
 model =    [('A', []),
-			('C' , []),
-			('B', ['A', 'C'])
+			('B', ['A'])
 			]
 
 varEquations = [
-			    'A = logistic(5,3)',
-			    'C = logistic(0,3)',
-			    'B = A + C + logistic(0, 6)',
+			    'A = logistic(0,1)',
+			    'B = A + logistic(0, .5)',
 		        ]
 
 

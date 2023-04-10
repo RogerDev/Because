@@ -741,7 +741,7 @@ class cGraph:
         else:
             #rho = direction.test_direction(self.data[x], self.data[y])
             # Use standardized data
-            rho = self.prob.testDirection(x, y, power)
+            rho = self.prob.testDirection(x, y, power=power)
             # Add result to cache
             self.dirCache[cacheKey] = rho
             # Add reverse result to cache, with reversed rho
@@ -825,7 +825,7 @@ class cGraph:
                 y = rvList[j]
                 if x == y or y in exclude:
                     continue
-                R = self.testDirection(x, y, power, N_train, power=power)
+                R = self.testDirection(x, y, power=power)
 
                 if R > 0:
                     leastCausal = y
