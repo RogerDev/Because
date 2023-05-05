@@ -113,6 +113,8 @@ def queryList(ps, inList, allowedResults=None):
             result = ps.P(targ,cond)
         elif cmd == 'E':
             result = ps.E(targ,cond)
+            if result is None:
+                result = 'Expectation Error -- No data fits condition.'
         elif cmd == 'D':
             result = ps.distr(targ,cond)
         results.append(result)

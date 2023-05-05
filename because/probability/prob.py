@@ -1051,16 +1051,18 @@ class ProbSpace:
         # Conditional Expectation
         condSpecs, filtSpecs = self.separateSpecs(givenSpecs)
         if not condSpecs:
+            if DEBUG:
+                print('Edisc: filtSpecs = ', filtSpecs)
             # Straight (bound) conditioning
             Dtarg = 1
             ss = self.getCondSpace(filtSpecs)
             #print('No control: ss.N = ', ss.N)
-            if ss.N == 0:
+            if ss.N <= 10:
                 # No points in this interval.  Use kernel approximation
                 # to estimate the expectation.
-                result = self.E(target, givenSpecs, cMethod='j', smoothness=1)
+                result = self.Ejp(target, filtSpecs, power, smoothness=1)
             else:
-                result = ss.E(target)
+                result = ss.E(target, power=power)
         else:
             # Conditionalization and possibly conditioning as well.
             # Conditionalize on all indicated variables. I.e.,
@@ -1105,21 +1107,63 @@ class ProbSpace:
 
         if not condSpecs:
             # Straight (bound) conditioning
-            filtVars = [filtSpec[0] for filtSpec in filtSpecs]
-            filtVals = []
+            # We need to saparate equality filters from others. If there
+            # are non-equality filters, we need to first filter the data
+            # and then apply the RKHS.  We treat range data as equality,
+            # using the midpoint as an equality value.
+            if DEBUG:
+                print('Ejp: filtSpecs = ', filtSpecs)
+           
+            eqvals = []
+            eqspecs = []
+            neqspecs = []
+
             for filtSpec in filtSpecs:
                 if len(filtSpec) == 2:
-                    filtVals.append(filtSpec[1])
+                    if type(filtSpec[1] != type((1,))) and not self.isCategorical(filtSpec[0]):
+                        if type(filtSpec[1]) == type(''):
+                            # String val.  Convert to number.
+                            val = self.strToNum(filtSpec[0], filtSpec[1])
+                        else:
+                            val = filtSpec[1]
+                        eqvals.append(val)
+                        eqspecs.append(filtSpec)
+                    else:
+                        neqspecs.append(filtSpec)
                 else:
-                    filtVals.append((filtSpec[1] + filtSpec[2]) / 2.0)
+                    if filtSpec[1] is not None and filtSpec[2] is not None:
+                        eqvals.append((filtSpec[1] + filtSpec[2]) / 2.0)
+                        eqspecs.append(filtSpec)
+                    else:
+                        if filtSpec[1] is None:
+                            val = filtSpec[2]
+                        else:
+                            val = filtSpec[1]
+                        eqvals.append(val)
+                        eqspecs.append(filtSpec)
+            if neqspecs:
+                ss = self.getCondSpace(neqspecs)
+                if ss.N < 1:
+                    # We have to punt here.  Ignore the filters, and continue.
+                    # We need to return something, and zero is a bad answer.
+                    print('Ejp: Punting -- Ignoring filters')
+                    ss = self
+            else:
+                ss = self
+            if not eqspecs:
+                # Again we have to punt.
+                #print('Ejp: Punting -- Returning unconditional mean.')
+                return self.E(target, power=power)
+            eqvars = [filtSpec[0] for filtSpec in eqspecs]
+            print('Ejp: eqvars, eqvals  = ', eqvars, eqvals)
             # Try to get rkhs from cache.  Otherwise create it.
-            cacheKey = (tuple(filtVars), smoothness)
+            cacheKey = (tuple(eqvars), smoothness)
             if cacheKey in self.rkhsCache.keys():
                 R = self.rkhsCache[cacheKey]
             else:
-                R = rkhsMV.RKHS(self.ds, includeVars=filtVars, s=smoothness)
+                R = rkhsMV.RKHS(ss.ds, includeVars=eqvars, s=smoothness)
                 self.rkhsCache[cacheKey] = R
-            result = R.condE(target, filtVals)
+            result = R.condE(target, eqvals)
         else:
             # Conditionalization and possibly conditioning as well.
             # Conditionalize on all indicated variables. I.e.,
@@ -1380,6 +1424,9 @@ class ProbSpace:
 
         if power is None:
             power = self.power
+        if self.N < 10:
+            # Too few points to assess a distribution.
+            return None
         targetSpecs = self.normalizeSpecs(targetSpecs)
         givenSpecs = self.normalizeSpecs(givenSpecs)
         assert len(targetSpecs) == 1, 'ProbSpace.distr: target must be singular.  Got ' + str(targetSpecs)
@@ -1424,9 +1471,10 @@ class ProbSpace:
             condSpecs, filtSpecs = self.separateSpecs(givenSpecs)
             if not condSpecs:
                 # Nothing to conditionalize on.  We're computing a fully bound conditional (i.e. no free variables)
-                Dquery = len(filtSpecs) + 1
-                Nfilt = self.N**(len(filtSpecs) / Dquery)
-                ss = self.SubSpace(filtSpecs)
+                #Dquery = len(filtSpecs) + 1
+                ss = self.getCondSpace(filtSpecs)
+                #Nfilt = self.N**(len(filtSpecs) / Dquery)
+                #ss = self.SubSpace(filtSpecs)
                 outPDF = ss.distr(rvName)
                 #outPDF = self.boundCondition(rvName, filtSpecs)
             else:
@@ -1697,7 +1745,7 @@ class ProbSpace:
                 else:
                     # Discrete numeric.  Sample a range of values
                     allVals = self.getMidpoints(rvName)
-                    nSamples = 2 * power + 1
+                    nSamples = int(2 * power + 1)
                     nVals = len(allVals)
                     if nVals <= nSamples:
                         testVals = allVals
@@ -1711,7 +1759,10 @@ class ProbSpace:
                         # when the remaining values - nSamples is odd, we'll favor the later values.
                         start = ceil((len(sampleIndxs) - nSamples) / 2)
                         # Extract the nSamples center values.
-                        sampleIndxs = sampleIndxs[start : start + nSamples]
+                        try:
+                            sampleIndxs = sampleIndxs[start : start + nSamples]
+                        except:
+                            assert False, 'Get test values (start, nSamples, power, rvName)' + str((start, nSamples, power, rvName))
                         testVals = [allVals[indx] for indx in sampleIndxs]                        
             else:
                 # If continuous, sample values at various distances from the mean
@@ -1724,6 +1775,7 @@ class ProbSpace:
                         testVals.append(-tp,)
                         testVals.append(tp,)
             return testVals # End getTestVals
+
         if power == 0:
             maxLevel = .5
             levelSpecs = [0]

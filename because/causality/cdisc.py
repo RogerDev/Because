@@ -292,8 +292,11 @@ def discover(ps, varNames=None, maxLevel=2, power=5, sensitivity=5, verbosity=2)
                 confdep = []
                 for conflict in conflicts:
                     v1, v2, conds = conflict
-                    dep = ps.dependence(v1, v2, list(conds), power=power,
-                                sensitivity=sensitivity)
+                    try:
+                        dep = ps.dependence(v1, v2, list(conds), power=power,
+                                    sensitivity=sensitivity)
+                    except:
+                        assert False, 'checing dependence: ' + v1 + ',' + v2 + ', ' + str(list(conds))
                     confdep.append((dep, conflict))
                 # Choose the one with the least dependence
                 confdep.sort()

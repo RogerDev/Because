@@ -2,7 +2,7 @@ import numpy as np
 from math import ceil
 
 class Grid:
-    def __init__(self, ps, vars, lim=1, numPts=20):
+    def __init__(self, ps, vars, lim=.2, numPts=20):
         dims = len(vars)
         assert dims > 0 and dims <= 3, 'makeGrid:  Only dimensionality 1 through 3 is supported.  Got: ' +  str(dims)
         distrs = [ps.distr(c) for c in vars]
@@ -34,7 +34,7 @@ class Grid:
                             allVals.append(val)
                     nVals = len(allVals)
                     #print('nVals = ', nVals)
-                    if nVals <= nSamples:
+                    if nVals <= nSamples or (dims == 1 and nVals < 100):
                         # Use all values
                         for val in allVals:
                             vSpace.append((val, val))
@@ -55,15 +55,11 @@ class Grid:
             else:
                 # Continuous.  Use even ranges.
                 testVals = list(np.linspace(minvs[i], maxvs[i], numPts + 1))[:-1]
-                for j in range(len(testVals)):
+                for j in range(len(testVals)-1):
                     testVal = testVals[j]
-                    if j == len(testVals) - 1:
-                        midPt = (testVal + maxvs[i]) * .5
-                        vSpace.append((midPt, testVal, None))
-                    else:
-                        next = testVals[j+1]
-                        midPt = (testVal + next) * .5
-                        vSpace.append((midPt, testVal, next))
+                    next = testVals[j+1]
+                    midPt = (testVal + next) * .5
+                    vSpace.append((midPt, testVal, next))
             nTests *= len(vSpace)
             vSpaces.append(vSpace)
         self.dims = dims
