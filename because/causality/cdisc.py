@@ -353,7 +353,7 @@ def discover(ps, varNames=None, maxLevel=2, power=5, sensitivity=5, verbosity=2)
         v1, v2 = link
         linkR = (v2, v1)
         if (ps.isCategorical(v1) or ps.cardinality(v1) == 2) and (ps.isCategorical(v2) or ps.cardinality(v2) == 2):
-            # Both variables are either models or binary.  Use UCM via testDirection
+            # Both variables are either categorical or binary.  Use UCM via testDirection
             adj1 = adjacencies[v1]
             adj2 = adjacencies[v2]
 
