@@ -7,7 +7,7 @@ from pprint import pprint
 from because.utils import vprint
 
 
-verbosity = 1
+verbosity = 0
 '''
 Uniform channel variable class. 
 Auto-initializes the distributions for the variable given a base distribution. 

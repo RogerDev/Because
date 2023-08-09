@@ -1848,7 +1848,6 @@ class ProbSpace:
                 # Use UC model for categorical and binary data.
                 if (self.isCategorical(rvA) or (self.isDiscrete(rvA) and self.cardinality(rvA) < 3)) \
                         and (self.isCategorical(rvB) or (self.isDiscrete(rvB) and self.cardinality(rvB) < 3)):
-                    print("Using UCM test...")
                     if rvA in self.stringMapR.keys() and rvB in self.stringMapR.keys():
                         # For readability with testing
                         rho, identifiable = ucm.uniform_channel_test(standA, standB, AMap=self.stringMapR[rvA], BMap=self.stringMapR[rvB])
