@@ -10,7 +10,7 @@ I recommend saving output to a text file on run for analysis:
 Computing with full dataset vs a sample will produce somewhat different results. 
 '''
 
-df = pd.read_csv("../../../models/llcp.csv")
+df = pd.read_csv("models/llcp.csv")
 
 ds = Reader("models/llcp.csv")
 # ds = Reader("models/llcp.csv", limit=10000)
