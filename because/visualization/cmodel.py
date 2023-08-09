@@ -73,6 +73,8 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], controlFor=[], gtyp
     rvs = cg.getRVs()
     if edgeLabels == 'mde':
         elText = 'Maximum Direct Effect'
+    elif edgeLabels == 'rho':
+        elText = 'Rho-value'
     else:
         elText = 'Correlation'
     vprint(4, verbosity, 'Showing', elText, 'for edge labels')
@@ -86,6 +88,8 @@ def show(dataPath='', numRecs=0, targetSpec=[], condSpec=[], controlFor=[], gtyp
                 effect = cg.MDE(parent, var)
                 if corr < 0:
                     effect *= -1
+            elif edgeLabels == 'rho':
+                effect = cg.getEdgeProp(link, 'dir_rho')
             else:
                 effect = corr
             edgeVals[link] = effect

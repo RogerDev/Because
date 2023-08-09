@@ -353,11 +353,18 @@ def discover(ps, varNames=None, maxLevel=2, power=5, sensitivity=5, verbosity=2)
         v1, v2 = link
         linkR = (v2, v1)
         if (ps.isCategorical(v1) or ps.cardinality(v1) == 2) and (ps.isCategorical(v2) or ps.cardinality(v2) == 2):
-            # Both variables are either categorical or binary.  Use differential entropy
-            de = dirDE(ps, v1, v2, verbosity=verbosity)
-            vprint(4, verbosity, 'cdisc.discover: Differential Entropy for', link, 'is', de)
-            dirDict[link] = de
-            dirDict[linkR] = -de
+            # Both variables are either categorical or binary.  Use UCM via testDirection
+            adj1 = adjacencies[v1]
+            adj2 = adjacencies[v2]
+
+            adj = list(set(adj1 + adj2))
+            adj.remove(v1)
+            adj.remove(v2)
+            # adj now contains the set of adjacencies to either v1 or v2, without v1 or v2
+            dir = testDirection(ps, v1, v2, [], power, maxLevel=maxLevel, verbosity=verbosity)
+            vprint(4, verbosity, 'cdisc.discover: Final direction for', link, 'is', dir)
+            dirDict[link] = dir
+            dirDict[linkR] = -dir
         elif (ps.isCategorical(v1) or ps.cardinality(v1) == 2) or (ps.isCategorical(v2) or ps.cardinality(v2) == 2):
             # We have no method for this case
             dirDict[link] = 0
