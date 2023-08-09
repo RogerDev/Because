@@ -15,6 +15,7 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.ensemble import RandomForestClassifier
 from because.probability import direction
 from because.probability.standardiz import standardize
+from because.probability.ucm import ucm
 
 DEBUG = False
 
@@ -1829,14 +1830,14 @@ class ProbSpace:
             else:
                 # Unconditional.
                 # Standardize the data.
-                if self.cardinality(rvA) > 2:
+                if self.cardinality(rvA) > 2 and not self.isCategorical(rvA):
                     standA = self.standCache.get(rvA, None)
                     if standA is None:
                         standA = standardize(self.ds[rvA])
                         self.standCache[rvA] = standA
                 else:
                     standA = self.ds[rvA]
-                if self.cardinality(rvB) > 2:
+                if self.cardinality(rvB) > 2 and not self.isCategorical(rvB):
                     standB = self.standCache.get(rvB, None)
                     if standB is None:
                         standB = standardize(self.ds[rvB])
@@ -1844,8 +1845,20 @@ class ProbSpace:
                 else:
                     standB = self.ds[rvB]
                 # Call the direction module with standardized data.
-                rho = direction.test_direction(standA, standB, power, N_train)
-            # Add result to cache
+                # Use UC model for categorical and binary data.
+                if (self.isCategorical(rvA) or (self.isDiscrete(rvA) and self.cardinality(rvA) < 3)) \
+                        and (self.isCategorical(rvB) or (self.isDiscrete(rvB) and self.cardinality(rvB) < 3)):
+                    print("Using UCM test...")
+                    if rvA in self.stringMapR.keys() and rvB in self.stringMapR.keys():
+                        # For readability with testing
+                        rho, identifiable = ucm.uniform_channel_test(standA, standB, AMap=self.stringMapR[rvA], BMap=self.stringMapR[rvB])
+                    else:
+                        rho, identifiable = ucm.uniform_channel_test(standA, standB)
+                else:
+                    # Use ANM test
+                    rho = direction.test_direction(standA, standB, power, N_train)
+
+        # Add result to cache
             self.dirCache[cacheKey] = rho
             # Add reverse result to cache, with reversed rho
             reverseKey = (rvB, rvA, tuple(givenSpecs), power)
